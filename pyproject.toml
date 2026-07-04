@@ -1,0 +1,40 @@
+[project]
+name = "nightfall-alpha"
+version = "0.1.0"
+description = "Dashboard and research pipeline for overnight-effect trading strategies."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.111",
+  "uvicorn>=0.29",
+  "pandas>=3.0",
+  "numpy>=2.3",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.2",
+  "PyYAML>=6.0",
+  "typer>=0.26",
+  "ib-insync>=0.9.86",
+  "yfinance>=0.2",
+  "pandas-datareader>=0.10",
+]
+
+[project.optional-dependencies]
+research = [
+  "scipy>=1.14",
+  "cvxpy>=1.5",
+  "plotly>=5.24",
+  "streamlit>=1.38",
+]
+
+[project.scripts]
+nightfall-alpha = "nightfall_alpha.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

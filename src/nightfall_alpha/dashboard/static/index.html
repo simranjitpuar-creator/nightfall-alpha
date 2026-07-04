@@ -1,0 +1,1008 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NightFall Alpha</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css?v=framework-costs-20260702" />
+    <script>
+      // Apply persisted theme + custom palette before first paint (no flash).
+      (function () {
+        try {
+          const saved = JSON.parse(localStorage.getItem("pw-theme") || "{}");
+          const root = document.documentElement;
+          root.setAttribute("data-theme", saved.mode || "dark");
+          if (saved.vars) {
+            Object.entries(saved.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+          }
+          if (saved.accentName) root.setAttribute("data-accent", saved.accentName);
+          if (saved.collapsed) root.setAttribute("data-sidebar", "collapsed");
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="aurora" aria-hidden="true">
+      <span class="aurora-blob a"></span>
+      <span class="aurora-blob b"></span>
+      <span class="aurora-blob c"></span>
+    </div>
+
+    <div class="app-shell">
+      <!-- ===================== SIDEBAR ===================== -->
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="26" height="26">
+              <defs>
+                <linearGradient id="bm" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="var(--accent)" />
+                  <stop offset="1" stop-color="var(--accent-2)" />
+                </linearGradient>
+              </defs>
+              <path d="M3 22 L9 12 L14 18 L20 6 L29 20" fill="none" stroke="url(#bm)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="20" cy="6" r="3" fill="var(--accent-2)" />
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">NightFall Alpha</span>
+            <span class="brand-tag">Overnight Alpha Desk</span>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Dashboard sections">
+          <button class="nav-item" type="button" data-tab="data">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+            </span>
+            <span class="nav-label">Market Data</span>
+          </button>
+          <button class="nav-item active" type="button" data-tab="signal">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 5-8"/><path d="M3 21h18"/><circle cx="17" cy="6" r="1.6" fill="currentColor" stroke="none"/></svg>
+            </span>
+            <span class="nav-label">Signal Backtest</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="portfolio">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9l7 4"/><circle cx="12" cy="12" r="9"/></svg>
+            </span>
+            <span class="nav-label">Portfolio Research</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="trades">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            </span>
+            <span class="nav-label">Trade Blotter</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="framework">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h11a3 3 0 0 1 3 3v13"/><path d="M6 17h14"/><path d="M6 21h14"/><path d="M8 7h7"/><path d="M8 11h8"/></svg>
+            </span>
+            <span class="nav-label">Framework</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="settings">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 6 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 .6 14H.5a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 8a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 8 2.6h.1A1.7 1.7 0 0 0 10 .6V.5a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 16 2.6a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21.4 8v.1A2 2 0 1 1 21.4 12" transform="translate(1.5 1.5) scale(0.92)"/></svg>
+            </span>
+            <span class="nav-label">Settings</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <button id="collapseButton" class="collapse-btn" type="button" title="Collapse sidebar" aria-label="Collapse sidebar">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            <span class="nav-label">Collapse</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ===================== MAIN ===================== -->
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1 id="pageTitle">Signal Backtest</h1>
+            <div id="asOf" class="subtle">Loading</div>
+          </div>
+          <div class="topbar-actions">
+            <button id="customizeButton" class="icon-btn" type="button" title="Customize colors" aria-label="Customize colors">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2a10 10 0 1 0 0 20 2.5 2.5 0 0 0 2-4 2.5 2.5 0 0 1 2-4h1a4 4 0 0 0 4-4 9.6 9.6 0 0 0-9-8z"/></svg>
+            </button>
+            <button id="themeToggle" class="icon-btn" type="button" title="Toggle theme" aria-label="Toggle light or dark theme">
+              <svg class="ico-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+              <svg class="ico-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            </button>
+            <button id="refreshButton" class="primary-btn" type="button">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/></svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </header>
+
+        <div id="taskProgress" class="task-progress" hidden>
+          <div class="task-progress-head">
+            <span data-progress-label>Working...</span>
+            <span data-progress-percent>0%</span>
+          </div>
+          <div class="task-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="task-progress-fill"></div>
+          </div>
+        </div>
+
+        <main class="content">
+          <!-- ===================== MARKET DATA ===================== -->
+          <section class="tab-panel" data-tab-panel="data">
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Market Data</h2>
+                <span id="dataStatus" class="subtle"></span>
+              </div>
+              <form id="dataForm" class="form-grid">
+                <label>
+                  <span>Source</span>
+                  <select id="dataSource" name="source">
+                    <option value="yahoo">Yahoo Finance</option>
+                    <option value="yahoo_max">Yahoo Max History</option>
+                    <option value="stooq">Stooq Long History</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Tickers</span>
+                  <input id="dataTickers" name="tickers" type="text" placeholder="AAPL, MSFT or blank for S&P 500" />
+                </label>
+                <label>
+                  <span>Start</span>
+                  <input id="dataStart" name="start" type="date" value="2018-01-01" />
+                </label>
+                <label>
+                  <span>End</span>
+                  <input id="dataEnd" name="end" type="date" />
+                </label>
+                <label>
+                  <span>Limit</span>
+                  <input id="dataLimit" name="limit" type="number" min="1" max="505" value="50" />
+                </label>
+                <label class="checkbox-label">
+                  <input id="runAfterDownload" name="runAfterDownload" type="checkbox" checked />
+                  <span>Run backtest</span>
+                </label>
+                <button id="downloadButton" class="primary-btn submit" type="submit">Download Real Data</button>
+              </form>
+            </section>
+          </section>
+
+          <!-- ===================== SIGNAL BACKTEST ===================== -->
+          <section class="tab-panel active" data-tab-panel="signal">
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Signal Backtest Settings</h2>
+                <span id="backtestStatus" class="subtle"></span>
+              </div>
+              <form id="backtestForm" class="form-grid">
+                <label>
+                  <span>Initial Equity</span>
+                  <input id="signalInitialEquity" name="initialEquity" type="number" min="1" step="1" value="1000000" />
+                </label>
+                <label>
+                  <span>Fees Bps</span>
+                  <input id="signalFeesBps" name="feesBps" type="number" min="0" step="0.1" value="0.5" />
+                </label>
+                <label>
+                  <span>Slippage Bps</span>
+                  <input id="signalSlippageBps" name="slippageBps" type="number" min="0" step="0.1" value="1" />
+                </label>
+                <label>
+                  <span>Signal Lookback</span>
+                  <input id="signalLookbackDays" name="lookbackDays" type="number" min="2" step="1" value="63" />
+                </label>
+                <label>
+                  <span>Min History</span>
+                  <input id="signalMinHistory" name="minHistory" type="number" min="1" step="1" value="40" />
+                </label>
+                <label>
+                  <span>Top N</span>
+                  <input id="signalTopN" name="topN" type="number" min="1" max="505" step="1" value="25" />
+                </label>
+                <label>
+                  <span>Max Weight</span>
+                  <input id="signalMaxWeight" name="maxWeight" type="number" min="0.01" max="1" step="0.01" value="0.07" />
+                </label>
+                <label>
+                  <span>Min Signal</span>
+                  <input id="signalMinSignal" name="minSignal" type="number" step="0.1" value="0" />
+                </label>
+                <label>
+                  <span>Price Start</span>
+                  <input id="signalPriceStart" name="priceStart" type="date" />
+                </label>
+                <label>
+                  <span>Price End</span>
+                  <input id="signalPriceEnd" name="priceEnd" type="date" />
+                </label>
+                <label class="span-2">
+                  <span>Price Tickers</span>
+                  <input id="signalPriceTickers" name="priceTickers" type="text" placeholder="Blank uses all cached symbols" />
+                </label>
+                <button id="runButton" class="primary-btn submit" type="submit">Run Signal Backtest</button>
+              </form>
+            </section>
+
+            <section class="summary-block reveal" aria-label="Signal backtest summary">
+              <div class="section-heading">
+                <h2>Signal Strategy Backtest Metrics</h2>
+                <span id="summaryMeta" class="subtle">Updates after Run Signal Backtest or Market Data download</span>
+              </div>
+              <div id="metricGrid" class="metric-grid"></div>
+            </section>
+
+            <section class="panel curve-panel reveal">
+              <div class="panel-header curve-header">
+                <div>
+                  <h2>Signal Strategy Curves</h2>
+                  <span id="equityRange" class="subtle"></span>
+                </div>
+                <div class="curve-toolbar" aria-label="Curve range">
+                  <button class="ghost-button active" type="button" data-range="full">Full</button>
+                  <button class="ghost-button" type="button" data-range="10y">10Y</button>
+                  <button class="ghost-button" type="button" data-range="5y">5Y</button>
+                  <button class="ghost-button" type="button" data-range="3y">3Y</button>
+                  <button class="ghost-button" type="button" data-range="1y">1Y</button>
+                </div>
+              </div>
+              <div class="curve-readout" id="curveReadout">
+                <span>Date -</span>
+                <span>Equity -</span>
+                <span>Drawdown -</span>
+              </div>
+              <div class="curve-grid">
+                <div class="curve-window">
+                  <canvas id="equityChart" height="380" aria-label="Strategy equity curve"></canvas>
+                </div>
+                <div class="curve-window">
+                  <canvas id="drawdownChart" height="260" aria-label="Strategy drawdown curve"></canvas>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Current Overnight Candidates</h2>
+                <span id="bookMeta" class="subtle"></span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Entry</th>
+                      <th>Exit</th>
+                      <th>Rank</th>
+                      <th>Ticker</th>
+                      <th>Name</th>
+                      <th>Sector</th>
+                      <th>ETF</th>
+                      <th>Market Cap</th>
+                      <th>Target Weight</th>
+                      <th>O/N Sharpe</th>
+                      <th>O/N Mean</th>
+                      <th>O/N Vol</th>
+                      <th id="candidateWinHeader">Lookback Win</th>
+                      <th>Next O/N Return</th>
+                    </tr>
+                  </thead>
+                  <tbody id="holdingsBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <!-- ===================== PORTFOLIO RESEARCH ===================== -->
+          <section class="tab-panel" data-tab-panel="portfolio">
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2 id="portfolioBuilderTitle">Portfolio Builder</h2>
+                <span id="builderStatus" class="subtle"></span>
+              </div>
+              <form id="portfolioForm" class="form-grid">
+                <label>
+                  <span>Universe Mode</span>
+                  <select id="universeMode" name="universeMode">
+                    <option value="selected">Selected Stocks</option>
+                    <option value="all">Entire Local Universe</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Missing Data</span>
+                  <select id="builderDataSource" name="builderDataSource">
+                    <option value="yahoo">Yahoo Finance</option>
+                    <option value="yahoo_max" selected>Yahoo Max History</option>
+                    <option value="stooq">Stooq Long History</option>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span>Tickers</span>
+                  <input id="portfolioTickers" name="tickers" type="text" value="AAPL, MSFT, NVDA, AMZN, JPM, XOM, PG, UNH" />
+                </label>
+                <label class="span-2">
+                  <span>Universe Selector</span>
+                  <select id="universeSelect" name="universeSelect" multiple size="8"></select>
+                </label>
+                <button id="addUniverseButton" class="ghost-button big" type="button">Add Selected</button>
+                <button id="refreshUniverseButton" class="ghost-button big" type="button">Refresh Universe</button>
+                <label>
+                  <span>Return Model</span>
+                  <select id="returnModel" name="returnModel">
+                    <option value="overnight">Overnight</option>
+                    <option value="close_to_close">Close to Close</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Initial Equity</span>
+                  <input id="builderInitialEquity" name="builderInitialEquity" type="number" min="1" step="1" value="1000000" />
+                </label>
+                <label>
+                  <span>Fees Bps</span>
+                  <input id="builderFeesBps" name="builderFeesBps" type="number" min="0" step="0.1" value="0" />
+                </label>
+                <label>
+                  <span>Slippage Bps</span>
+                  <input id="builderSlippageBps" name="builderSlippageBps" type="number" min="0" step="0.1" value="0" />
+                </label>
+                <label>
+                  <span>Default Max Weight</span>
+                  <input id="maxWeight" name="maxWeight" type="number" min="0.01" max="1" step="0.01" value="0.15" />
+                </label>
+                <label>
+                  <span>Rebalance</span>
+                  <select id="rebalanceFrequency" name="rebalanceFrequency">
+                    <option value="none" selected>Static Weights</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </label>
+                <div class="optimizer-settings span-4">
+                  <div class="optimizer-settings-head">
+                    <strong id="optimizerSettingsTitle">Optimizer Parameters</strong>
+                    <span class="subtle">All methods run together; blank cap overrides use Default Max Weight.</span>
+                  </div>
+                  <div class="optimizer-param-grid">
+                    <fieldset class="optimizer-param-block">
+                      <legend>Kelly</legend>
+                      <label>
+                        <span>Fraction</span>
+                        <input id="kellyFraction" name="kellyFraction" type="number" min="0" max="1" step="0.05" value="0.5" />
+                      </label>
+                      <label>
+                        <span>Max Weight Override</span>
+                        <input id="kellyMaxWeight" name="kellyMaxWeight" type="number" min="0.01" max="1" step="0.01" placeholder="Default" />
+                      </label>
+                    </fieldset>
+                    <fieldset class="optimizer-param-block">
+                      <legend>Mean Variance</legend>
+                      <label>
+                        <span>Risk Aversion</span>
+                        <input id="meanVarianceRiskAversion" name="meanVarianceRiskAversion" type="number" min="0.1" step="0.1" value="8" />
+                      </label>
+                      <label>
+                        <span>Max Weight Override</span>
+                        <input id="meanVarianceMaxWeight" name="meanVarianceMaxWeight" type="number" min="0.01" max="1" step="0.01" placeholder="Default" />
+                      </label>
+                    </fieldset>
+                    <fieldset class="optimizer-param-block">
+                      <legend>Minimum Risk</legend>
+                      <label>
+                        <span>Min Var Cap</span>
+                        <input id="minimumVarianceMaxWeight" name="minimumVarianceMaxWeight" type="number" min="0.01" max="1" step="0.01" placeholder="Default" />
+                      </label>
+                      <label>
+                        <span>Inv Vol Cap</span>
+                        <input id="inverseVolatilityMaxWeight" name="inverseVolatilityMaxWeight" type="number" min="0.01" max="1" step="0.01" placeholder="Default" />
+                      </label>
+                    </fieldset>
+                    <fieldset class="optimizer-param-block">
+                      <legend>CVaR</legend>
+                      <label>
+                        <span>Confidence</span>
+                        <input id="cvarAlpha" name="cvarAlpha" type="number" min="0.5" max="0.999" step="0.005" value="0.95" />
+                      </label>
+                      <label>
+                        <span>Max Weight Override</span>
+                        <input id="cvarMaxWeight" name="cvarMaxWeight" type="number" min="0.01" max="1" step="0.01" placeholder="Default" />
+                      </label>
+                    </fieldset>
+                    <fieldset class="optimizer-param-block span-2">
+                      <legend>Black-Litterman</legend>
+                      <label>
+                        <span>Tau</span>
+                        <input id="blackLittermanTau" name="blackLittermanTau" type="number" min="0.001" step="0.001" value="0.05" />
+                      </label>
+                      <label>
+                        <span>Prior Risk Aversion</span>
+                        <input id="blackLittermanPriorRiskAversion" name="blackLittermanPriorRiskAversion" type="number" min="0.1" step="0.1" value="2.5" />
+                      </label>
+                      <label>
+                        <span>Optimizer Risk Aversion</span>
+                        <input id="blackLittermanRiskAversion" name="blackLittermanRiskAversion" type="number" min="0.1" step="0.1" value="8" />
+                      </label>
+                      <label>
+                        <span>Max Weight Override</span>
+                        <input id="blackLittermanMaxWeight" name="blackLittermanMaxWeight" type="number" min="0.01" max="1" step="0.01" placeholder="Default" />
+                      </label>
+                    </fieldset>
+                  </div>
+                </div>
+                <label>
+                  <span>Lookback</span>
+                  <input id="lookbackDays" name="lookbackDays" type="number" min="20" step="1" value="756" />
+                </label>
+                <label class="checkbox-label">
+                  <input id="useAllHistory" name="useAllHistory" type="checkbox" checked />
+                  <span>Use all history</span>
+                </label>
+                <label>
+                  <span>Data Since</span>
+                  <input id="builderDataStart" name="builderDataStart" type="date" value="1900-01-01" />
+                </label>
+                <label class="checkbox-label">
+                  <input id="autoDownloadMissing" name="autoDownloadMissing" type="checkbox" checked />
+                  <span>Auto-fill missing</span>
+                </label>
+                <label class="checkbox-label">
+                  <input id="refreshHistory" name="refreshHistory" type="checkbox" />
+                  <span>Refresh history</span>
+                </label>
+                <button id="buildPortfolioButton" class="primary-btn submit" type="submit">Build Portfolio</button>
+              </form>
+            </section>
+
+            <section class="dashboard-grid">
+              <div class="panel reveal">
+                <div class="panel-header">
+                  <h2 id="currentBuilderSuiteTitle">Current Builder Optimizer Suite</h2>
+                  <span id="builderMeta" class="subtle"></span>
+                </div>
+                <div class="panel-actions">
+                  <button id="downloadBuilderSummaryCsv" class="ghost-button big" type="button">Download Metrics CSV</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Portfolio</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Years</th>
+                        <th>Obs</th>
+                        <th>Initial Equity</th>
+                        <th>Ending Equity</th>
+                        <th>Period Return</th>
+                        <th>CAGR</th>
+                        <th>Ann Return</th>
+                        <th>Annual Vol</th>
+                        <th>Sharpe</th>
+                        <th>Sortino</th>
+                        <th>Calmar</th>
+                        <th>1Y Sharpe</th>
+                        <th>3Y Sharpe</th>
+                        <th>5Y Sharpe</th>
+                        <th>1Y Sortino</th>
+                        <th>3Y Sortino</th>
+                        <th>5Y Sortino</th>
+                        <th>1Y Calmar</th>
+                        <th>3Y Calmar</th>
+                        <th>5Y Calmar</th>
+                        <th>Max DD</th>
+                        <th>Win Rate</th>
+                        <th>Profit Factor</th>
+                        <th>VaR 95</th>
+                        <th>CVaR 95</th>
+                        <th>Cost Drag</th>
+                        <th>Invested</th>
+                        <th>Cash</th>
+                        <th>Cap</th>
+                        <th>Max Weight</th>
+                        <th>Rebalances</th>
+                        <th>Avg Turnover</th>
+                        <th>Positions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="builderSummaryBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="panel reveal">
+                <div class="panel-header">
+                  <h2 id="optimizerWeightsTitle">Optimizer Weights</h2>
+                  <span id="builderWeightCount" class="subtle"></span>
+                </div>
+                <div class="panel-actions">
+                  <button id="downloadBuilderWeightsCsv" class="ghost-button big" type="button">Download Portfolio Executions CSV</button>
+                </div>
+                <div id="builderWeightsAccordion" class="optimizer-accordion"></div>
+              </div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2 id="savedSignalUniverseTitle">Saved Signal Universe Suite</h2>
+                <span id="portfolioSuiteMeta" class="subtle"></span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Portfolio</th>
+                      <th>Start</th>
+                      <th>End</th>
+                      <th>Years</th>
+                      <th>Obs</th>
+                      <th>Initial Equity</th>
+                      <th>Ending Equity</th>
+                      <th>Period Return</th>
+                      <th>CAGR</th>
+                      <th>Ann Return</th>
+                      <th>Annual Vol</th>
+                      <th>Sharpe</th>
+                      <th>Sortino</th>
+                      <th>Calmar</th>
+                      <th>1Y Sharpe</th>
+                      <th>3Y Sharpe</th>
+                      <th>5Y Sharpe</th>
+                      <th>1Y Sortino</th>
+                      <th>3Y Sortino</th>
+                      <th>5Y Sortino</th>
+                      <th>1Y Calmar</th>
+                      <th>3Y Calmar</th>
+                      <th>5Y Calmar</th>
+                      <th>Max DD</th>
+                      <th>Win Rate</th>
+                      <th>Profit Factor</th>
+                      <th>VaR 95</th>
+                      <th>CVaR 95</th>
+                      <th>Cost Drag</th>
+                      <th>Invested</th>
+                      <th>Cash</th>
+                      <th>Cap</th>
+                      <th>Max Weight</th>
+                      <th>Rebalances</th>
+                      <th>Avg Turnover</th>
+                      <th>Positions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="portfolioBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <!-- ===================== TRADE BLOTTER ===================== -->
+          <section class="tab-panel" data-tab-panel="trades">
+            <section class="summary-block reveal" aria-label="Trade blotter summary">
+              <div class="section-heading">
+                <h2>Trade Blotter Summary</h2>
+                <span id="tradeMeta" class="subtle"></span>
+              </div>
+              <div id="tradeMetricGrid" class="metric-grid compact-metrics"></div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Signal Backtest Executions</h2>
+                <span id="tradeCount" class="subtle"></span>
+              </div>
+              <div class="trade-context" id="tradeContext"></div>
+              <div class="filter-bar">
+                <label>
+                  <span>Symbol</span>
+                  <input id="tradeSymbolFilter" type="text" placeholder="All symbols" />
+                </label>
+                <label>
+                  <span>From</span>
+                  <input id="tradeStartFilter" type="date" />
+                </label>
+                <label>
+                  <span>To</span>
+                  <input id="tradeEndFilter" type="date" />
+                </label>
+                <label>
+                  <span>PnL</span>
+                  <select id="tradePnlFilter">
+                    <option value="all">All</option>
+                    <option value="wins">Winners</option>
+                    <option value="losses">Losers</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Rows</span>
+                  <select id="tradeLimitFilter">
+                    <option value="100">100</option>
+                    <option value="250">250</option>
+                    <option value="500">500</option>
+                    <option value="1000" selected>1,000</option>
+                    <option value="5000">5,000</option>
+                    <option value="10000">10,000</option>
+                  </select>
+                </label>
+                <button id="clearTradeFilters" class="ghost-button big" type="button">Clear</button>
+                <button id="downloadTradesCsv" class="ghost-button big" type="button">Download CSV</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Entry Date</th>
+                      <th>Exit Date</th>
+                      <th>Rank</th>
+                      <th>Ticker</th>
+                      <th>Target Weight</th>
+                      <th>Overnight Return</th>
+                      <th>Notional</th>
+                      <th>Gross PnL</th>
+                      <th>Cost</th>
+                      <th>Net PnL</th>
+                      <th>O/N Sharpe</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tradesBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <!-- ===================== FRAMEWORK ===================== -->
+          <section class="tab-panel" data-tab-panel="framework">
+            <section class="panel reveal framework-hero">
+              <div class="panel-header">
+                <h2>Dashboard Framework</h2>
+                <span class="subtle">Methodology, data lineage, formulas, and model limitations</span>
+              </div>
+              <div class="framework-intro">
+                <p>
+                  NightFall Alpha is a research dashboard for testing an overnight-effect equity strategy and related portfolio construction methods.
+                  The core loop is: collect daily OHLCV data, calculate close-to-next-open returns, rank stocks by rolling overnight behavior,
+                  backtest a daily overnight book, then compare portfolio optimizers on the same return data.
+                </p>
+                <p>
+                  The dashboard is a research tool, not a live execution system. Results depend on data quality, symbol coverage,
+                  point-in-time assumptions, transaction cost assumptions, and the exact universe selected for each run.
+                </p>
+              </div>
+            </section>
+
+            <section class="framework-grid">
+              <article class="framework-card reveal">
+                <h3>System Map</h3>
+                <ul>
+                  <li><strong>Market Data</strong> updates the local price cache at <code>data/processed/prices.csv</code>.</li>
+                  <li><strong>Signal Backtest</strong> reads the local price cache, creates overnight features, ranks stocks, runs the strategy, and writes reports to <code>data/reports</code>.</li>
+                  <li><strong>Portfolio Research</strong> can either build a fresh optimizer suite from the current builder form or display the saved universe suite from the latest signal/data pipeline run.</li>
+                  <li><strong>Trade Blotter</strong> reads the saved signal backtest executions from <code>data/reports/trades.csv</code>.</li>
+                </ul>
+              </article>
+
+              <article class="framework-card reveal">
+                <h3>Return Definitions</h3>
+                <ul>
+                  <li><strong>Overnight return</strong> is calculated as next open divided by prior close minus one. This is the main strategy return.</li>
+                  <li><strong>Close-to-close return</strong> is calculated as current close divided by prior close minus one. This is available in Portfolio Research for ordinary daily portfolio testing.</li>
+                  <li><strong>Signal date</strong> is the date on which the model forms the overnight book. <strong>Exit date</strong> is the next available open used to realize the return.</li>
+                </ul>
+              </article>
+            </section>
+
+            <section class="panel reveal framework-section">
+              <div class="panel-header">
+                <h2>Market Data Methodology</h2>
+              </div>
+              <div class="framework-body">
+                <h3>Sources</h3>
+                <ul>
+                  <li><strong>Yahoo Finance</strong> uses the Python <code>yfinance</code> library for adjusted daily OHLCV data. It is usually the fastest source for current US equities.</li>
+                  <li><strong>Yahoo Max History</strong> uses the same provider but requests the longest history available from Yahoo. The actual first date still depends on each ticker.</li>
+                  <li><strong>Stooq Long History</strong> uses Stooq daily files through the app's Stooq provider. US symbols are normalized into Stooq's expected format where needed.</li>
+                  <li><strong>S&amp;P 500 universe metadata</strong> can come from the public S&amp;P 500 table on Wikipedia. Wikipedia is used for constituent names/sectors, not for price bars.</li>
+                </ul>
+
+                <h3>Inputs</h3>
+                <ul>
+                  <li><strong>Source</strong> selects the provider used for a download. Changing it does not change saved data until a download runs.</li>
+                  <li><strong>Tickers</strong> restricts the request to typed symbols. If blank, the app uses the S&amp;P 500 universe list.</li>
+                  <li><strong>Start</strong> and <strong>End</strong> define the requested date range. Providers can return less history than requested.</li>
+                  <li><strong>Limit</strong> caps how many universe symbols are requested when Tickers is blank. It is ignored for typed ticker lists.</li>
+                  <li><strong>Run backtest</strong> reruns the Signal Backtest immediately after the download and passes the new symbols/date window into the signal engine.</li>
+                </ul>
+
+                <h3>Cache And Updates</h3>
+                <ul>
+                  <li>Downloaded prices are merged into <code>data/processed/prices.csv</code> and de-duplicated by date and symbol.</li>
+                  <li>The app does not download all market data on startup. A refresh happens when you use the Market Data tab, or when Portfolio Research fills missing symbols or refreshes history.</li>
+                  <li>The cache loader repairs malformed rows, removes impossible future dates, normalizes symbols, coerces numeric fields, and rewrites the cleaned file when needed.</li>
+                  <li>Provider failures, delisted symbols, renamed symbols, missing opens, and stale bars can create gaps. The app filters unusable rows, but it cannot guarantee institutional point-in-time data quality.</li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="panel reveal framework-section">
+              <div class="panel-header">
+                <h2>Signal Backtest Methodology</h2>
+              </div>
+              <div class="framework-body">
+                <h3>Strategy Logic</h3>
+                <ul>
+                  <li>The signal engine builds overnight features for every symbol with enough valid history.</li>
+                  <li>For each date, it estimates each stock's rolling overnight mean, volatility, win rate, and Sharpe-like score over the selected lookback window.</li>
+                  <li>Stocks are ranked by the overnight score. The top ranked names that pass the minimum signal threshold become the current overnight book.</li>
+                  <li>Each selected stock receives a target weight subject to the Max Weight cap. Unused capital remains implicit cash.</li>
+                  <li>The backtest applies the next close-to-open return to each target weight, subtracts transaction costs, compounds equity, and records one trade row per symbol per signal date.</li>
+                </ul>
+
+                <h3>Inputs</h3>
+                <ul>
+                  <li><strong>Initial Equity</strong> is the starting capital used for equity, notional, gross PnL, net PnL, and ending equity. It does not change percentage returns or rankings.</li>
+                  <li><strong>Fees Bps</strong> is the assumed commission or explicit trading fee in basis points per side.</li>
+                  <li><strong>Slippage Bps</strong> is the assumed execution slippage in basis points per side.</li>
+                  <li><strong>Signal Lookback</strong> controls the rolling window used to estimate overnight score. Shorter windows react faster and are noisier; longer windows are more stable and slower.</li>
+                  <li><strong>Min History</strong> is the minimum valid observations required before a symbol is eligible. Higher values reduce thin-history noise.</li>
+                  <li><strong>Top N</strong> controls how many highest-ranked names are selected per signal date.</li>
+                  <li><strong>Max Weight</strong> caps any single signal candidate's target weight.</li>
+                  <li><strong>Min Signal</strong> filters out names whose signal score is too low, even if they rank highly relative to the rest of the universe.</li>
+                  <li><strong>Price Start</strong>, <strong>Price End</strong>, and <strong>Price Tickers</strong> restrict the data window and symbols used in that signal run.</li>
+                </ul>
+
+                <h3>Transaction Cost Formula</h3>
+                <p>
+                  For the Signal Backtest, cost is applied every signal date because the strategy is modeled as an overnight trade book.
+                  The per-side rate is <code>(Fees Bps + Slippage Bps) / 10000</code>.
+                  Daily cost return is <code>2 * gross exposure * per-side rate</code>, because the book enters and exits.
+                  Net return is <code>gross return - cost return</code>.
+                </p>
+
+                <h3>Curves</h3>
+                <ul>
+                  <li><strong>Equity curve</strong> shows compounded account value after each realized overnight book. It reflects transaction costs and the Initial Equity input.</li>
+                  <li><strong>Drawdown curve</strong> shows percentage decline from the previous equity peak. Deeper or longer drawdowns mean the strategy required more patience and risk tolerance.</li>
+                  <li><strong>Range buttons</strong> only zoom the displayed curve. They do not recalculate signals or metrics.</li>
+                </ul>
+
+                <h3>Current Overnight Candidates</h3>
+                <ul>
+                  <li><strong>Entry</strong> is the signal date. <strong>Exit</strong> is the next open date used for realized return.</li>
+                  <li><strong>Rank</strong> is the daily ordering by the overnight score.</li>
+                  <li><strong>Ticker, Name, Sector, ETF, Market Cap</strong> come from universe metadata and help interpret concentration.</li>
+                  <li><strong>Target Weight</strong> is the model's allocation to that symbol after applying Top N and Max Weight.</li>
+                  <li><strong>O/N Sharpe</strong>, <strong>O/N Mean</strong>, <strong>O/N Vol</strong>, and <strong>Lookback Win</strong> are rolling overnight statistics used to understand why a candidate was selected.</li>
+                  <li><strong>Next O/N Return</strong> is the realized next overnight return for backtest accounting. In live use, this would not be known at signal time.</li>
+                </ul>
+
+                <h3>Visible Metrics</h3>
+                <ul>
+                  <li><strong>Initial Equity</strong> and <strong>Ending Equity</strong> show starting and final compounded capital.</li>
+                  <li><strong>Total Return</strong> is ending equity divided by initial equity minus one.</li>
+                  <li><strong>CAGR</strong> annualizes compounded return using elapsed calendar years.</li>
+                  <li><strong>Annual Vol</strong> annualizes the standard deviation of daily net returns.</li>
+                  <li><strong>Sharpe</strong> is annualized excess return divided by annualized volatility.</li>
+                  <li><strong>Sortino</strong> is annualized excess return divided by downside deviation.</li>
+                  <li><strong>Calmar</strong> is CAGR divided by absolute max drawdown.</li>
+                  <li><strong>1Y, 3Y, and 5Y rolling Sharpe, Sortino, and Calmar</strong> recalculate those ratios on the most recent trailing windows.</li>
+                  <li><strong>Max DD</strong> is the worst percentage drop from an equity peak.</li>
+                  <li><strong>Win Rate</strong> is the share of daily net returns above zero.</li>
+                  <li><strong>Profit Factor</strong> is the sum of positive daily net returns divided by the absolute sum of negative daily net returns.</li>
+                  <li><strong>VaR 95</strong> is the historical fifth percentile of daily net returns. <strong>CVaR 95</strong> is the average of returns at or below that threshold.</li>
+                  <li><strong>Cost Drag</strong> is the sum of modeled transaction cost returns over the test period.</li>
+                  <li><strong>Avg Exposure</strong> is the average absolute portfolio exposure used each signal date.</li>
+                  <li><strong>Avg Turnover</strong> is the average modeled round-trip turnover. In the Signal Backtest this is typically two times gross exposure because each book enters and exits overnight.</li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="panel reveal framework-section">
+              <div class="panel-header">
+                <h2>Portfolio Research Methodology</h2>
+              </div>
+              <div class="framework-body">
+                <h3>Builder Inputs</h3>
+                <ul>
+                  <li><strong>Universe Mode</strong> selects typed stocks or the entire local price universe.</li>
+                  <li><strong>Missing Data</strong> chooses the provider used only when missing symbols need to be filled or Refresh History is enabled.</li>
+                  <li><strong>Tickers</strong> and <strong>Universe Selector</strong> define the selected-stock investable universe.</li>
+                  <li><strong>Return Model</strong> chooses overnight returns or close-to-close returns for the optimizer matrix.</li>
+                  <li><strong>Initial Equity</strong> scales dollar outputs. It does not change weights or percentage returns.</li>
+                  <li><strong>Fees Bps</strong> and <strong>Slippage Bps</strong> set portfolio research transaction cost assumptions.</li>
+                  <li><strong>Default Max Weight</strong> caps single-name concentration unless an optimizer-specific cap overrides it.</li>
+                  <li><strong>Rebalance</strong> chooses static weights, monthly, quarterly, or annual re-optimization.</li>
+                  <li><strong>Lookback</strong> is the trailing estimation window when Use All History is off. In rebalance mode it is applied at each rebalance using only prior data.</li>
+                  <li><strong>Use All History</strong> uses every available eligible observation. In rebalance mode this becomes expanding prior history.</li>
+                  <li><strong>Data Since</strong> affects provider refresh requests. It does not trim the optimizer if no download occurs.</li>
+                  <li><strong>Auto-fill Missing</strong> downloads missing selected symbols. <strong>Refresh History</strong> intentionally refreshes selected symbols from the chosen provider.</li>
+                </ul>
+
+                <h3>Portfolio Cost Formula</h3>
+                <p>
+                  Portfolio Research models costs as allocation turnover, not as a daily overnight liquidation book.
+                  The per-side rate is <code>(Fees Bps + Slippage Bps) / 10000</code>.
+                  Static portfolios pay initial allocation turnover on the first row.
+                  Rebalanced portfolios pay turnover when target weights change at each rebalance.
+                  Net return is <code>gross portfolio return - turnover cost</code>.
+                </p>
+
+                <h3>Optimizers</h3>
+                <ul>
+                  <li><strong>Kelly 50%</strong> estimates raw Kelly weights from inverse covariance times expected return, clips long-only negative bets to zero, then scales by the Kelly fraction. It is meant for growth-seeking allocation but is sensitive to noisy expected returns.</li>
+                  <li><strong>Mean Variance</strong> maximizes expected return minus a variance penalty: <code>mu' w - 0.5 * lambda * w' Sigma w</code>, with long-only weights and caps. Higher risk aversion makes variance more expensive.</li>
+                  <li><strong>Minimum Variance</strong> ignores expected return and searches for the lowest-volatility long-only capped portfolio. It is useful as a defensive risk baseline.</li>
+                  <li><strong>Inverse Volatility</strong> allocates more to lower-volatility stocks using inverse standard deviation, then applies caps. It is simple, transparent, and less dependent on expected-return estimates.</li>
+                  <li><strong>CVaR Aware</strong> focuses on the historical loss tail. The confidence input controls how extreme the tail sample is. It is relevant when downside concentration matters more than ordinary variance.</li>
+                  <li><strong>Black-Litterman</strong> builds a prior return estimate from covariance and equal market weights, then allocates with a mean-variance objective. In this app it is a simplified no-view Black-Litterman-style stabilizer, not a full institutional view model.</li>
+                </ul>
+
+                <h3>Current Builder Optimizer Suite</h3>
+                <ul>
+                  <li>Every Build Portfolio run calculates all optimizer rows together from the same symbols, return model, history mode, costs, capital, and rebalance setting.</li>
+                  <li>The highlighted row is the best Sharpe result among the generated optimizer rows.</li>
+                  <li>The weights panel groups allocations by optimizer. In rebalance mode the UI shows the latest weights while the CSV contains all rebalance snapshots.</li>
+                </ul>
+
+                <h3>Saved Signal Universe Suite</h3>
+                <ul>
+                  <li>This table is saved by the latest Market Data or Signal Backtest pipeline run.</li>
+                  <li>It uses the broad overnight return matrix from that saved signal/data run, not the current builder form.</li>
+                  <li>Use it as a universe diagnostic. Use the Current Builder Optimizer Suite for the portfolio settings you just submitted.</li>
+                </ul>
+
+                <h3>Portfolio Metrics</h3>
+                <ul>
+                  <li><strong>Start, End, Years, Obs</strong> describe the performance sample used for each optimizer row.</li>
+                  <li><strong>Initial Equity, Ending Equity, Period Return, CAGR, Ann Return</strong> describe compounded return after costs.</li>
+                  <li><strong>Annual Vol, Sharpe, Sortino, Calmar, Max DD, VaR 95, CVaR 95</strong> describe volatility, downside, drawdown, and tail risk after costs.</li>
+                  <li><strong>Cost Drag</strong> is the sum of modeled portfolio allocation and rebalance cost returns.</li>
+                  <li><strong>Rolling ratios</strong> show the most recent 1, 3, and 5 year risk-adjusted performance windows when enough observations exist.</li>
+                  <li><strong>Win Rate</strong> and <strong>Profit Factor</strong> summarize daily net return consistency.</li>
+                  <li><strong>Invested</strong> is the sum of target weights. <strong>Cash</strong> is uninvested capital left by caps or conservative methods.</li>
+                  <li><strong>Cap</strong> is the max-weight limit applied to that optimizer. <strong>Max Weight</strong> is the largest actual position.</li>
+                  <li><strong>Rebalances</strong> counts portfolio re-optimization snapshots. <strong>Avg Turnover</strong> is the average absolute weight change at rebalance events.</li>
+                  <li><strong>Positions</strong> is the number of non-zero target weights.</li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="panel reveal framework-section">
+              <div class="panel-header">
+                <h2>Trade Blotter Methodology</h2>
+              </div>
+              <div class="framework-body">
+                <h3>Data Source</h3>
+                <p>
+                  The Trade Blotter is linked to the latest saved Signal Backtest, not to the Portfolio Builder.
+                  It reads <code>data/reports/trades.csv</code>, which is written whenever the signal research pipeline runs.
+                </p>
+
+                <h3>Summary Outputs</h3>
+                <ul>
+                  <li><strong>Source Trades</strong> is the full number of saved signal execution rows before filters.</li>
+                  <li><strong>Filtered Trades</strong> is the count after symbol, date, and PnL filters.</li>
+                  <li><strong>Loaded Rows</strong> is the number currently displayed in the browser table.</li>
+                  <li><strong>Symbols</strong> counts unique filtered tickers.</li>
+                  <li><strong>Source Start</strong> and <strong>Source End</strong> show the full saved blotter date range.</li>
+                  <li><strong>Latest Exit</strong> and <strong>Latest Book Trades</strong> describe the most recent saved overnight book.</li>
+                  <li><strong>Win Rate</strong> is the share of filtered trade rows with positive net PnL.</li>
+                  <li><strong>Total Net PnL</strong>, <strong>Avg Trade PnL</strong>, <strong>Best Trade</strong>, and <strong>Worst Trade</strong> summarize trade-level dollars after costs.</li>
+                  <li><strong>Total Costs</strong> is the dollar sum of fees and slippage allocated to filtered trade rows.</li>
+                  <li><strong>Avg Weight</strong> is the average absolute target weight of filtered trade rows.</li>
+                </ul>
+
+                <h3>Execution Rows</h3>
+                <ul>
+                  <li><strong>Entry Date</strong> is the signal date. <strong>Exit Date</strong> is the next open date used for return realization.</li>
+                  <li><strong>Rank</strong> is the daily signal rank.</li>
+                  <li><strong>Ticker</strong> is the traded symbol.</li>
+                  <li><strong>Target Weight</strong> is the model allocation to that ticker for the overnight book.</li>
+                  <li><strong>Overnight Return</strong> is the realized close-to-next-open return.</li>
+                  <li><strong>Notional</strong> is starting equity times target weight.</li>
+                  <li><strong>Gross PnL</strong> is notional times overnight return before costs.</li>
+                  <li><strong>Cost</strong> is that row's allocation of the daily round-trip fee and slippage model.</li>
+                  <li><strong>Net PnL</strong> is gross PnL minus cost.</li>
+                  <li><strong>O/N Sharpe</strong> is the rolling overnight score used in ranking.</li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="panel reveal framework-section">
+              <div class="panel-header">
+                <h2>Limitations And Model Risk</h2>
+              </div>
+              <div class="framework-body">
+                <ul>
+                  <li><strong>Survivorship bias:</strong> the S&amp;P 500 universe is based on available/current metadata, not a perfect historical point-in-time membership file.</li>
+                  <li><strong>Data quality:</strong> free data providers can revise bars, omit delisted names, change adjustment methods, throttle requests, or return incomplete histories.</li>
+                  <li><strong>Opening print realism:</strong> the model assumes the next open is achievable. Real fills can differ because of liquidity, spreads, auctions, halts, and order handling.</li>
+                  <li><strong>Transaction costs are simplified:</strong> fees and slippage are basis-point assumptions. The app does not model borrow, taxes, exchange fees by venue, market impact, partial fills, or order queue priority.</li>
+                  <li><strong>No live trading controls yet:</strong> there is no broker risk gate, order staging, kill switch, position reconciliation, or regulatory compliance layer in this dashboard.</li>
+                  <li><strong>Optimizer sensitivity:</strong> expected returns, covariance, CVaR, and Black-Litterman-style priors can be unstable, especially with short lookbacks or sparse symbols.</li>
+                  <li><strong>Overfitting risk:</strong> tuning lookbacks, Top N, caps, cost assumptions, and optimizer settings on the same history can make results look better than future performance.</li>
+                  <li><strong>Regime changes:</strong> overnight effects can decay, invert, or concentrate in specific sectors and volatility regimes.</li>
+                  <li><strong>Interpretation:</strong> backtests are research estimates. They should be validated out of sample and compared against simple benchmarks before any capital is committed.</li>
+                </ul>
+              </div>
+            </section>
+          </section>
+
+          <!-- ===================== SETTINGS ===================== -->
+          <section class="tab-panel" data-tab-panel="settings">
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Appearance</h2>
+                <span class="subtle">Live preview — changes save automatically</span>
+              </div>
+              <div class="settings-body">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <strong>Theme mode</strong>
+                    <span class="subtle">Switch between dark and light base.</span>
+                  </div>
+                  <div class="seg" id="modeSeg">
+                    <button type="button" class="seg-btn" data-mode="dark">Dark</button>
+                    <button type="button" class="seg-btn" data-mode="light">Light</button>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <strong>Accent presets</strong>
+                    <span class="subtle">One click palettes for the whole UI.</span>
+                  </div>
+                  <div class="swatches" id="presetSwatches"></div>
+                </div>
+
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <strong>Custom palette</strong>
+                    <span class="subtle">Fine-tune every core color. Charts update instantly.</span>
+                  </div>
+                  <div class="color-grid" id="colorGrid"></div>
+                </div>
+
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <strong>Effects</strong>
+                    <span class="subtle">Ambient aurora glow and motion.</span>
+                  </div>
+                  <div class="toggles">
+                    <label class="switch">
+                      <input type="checkbox" id="toggleAurora" checked />
+                      <span class="track"></span>
+                      <span class="switch-label">Aurora glow</span>
+                    </label>
+                    <label class="switch">
+                      <input type="checkbox" id="toggleMotion" checked />
+                      <span class="track"></span>
+                      <span class="switch-label">Page transitions</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <strong>Reset</strong>
+                    <span class="subtle">Return to the default palette.</span>
+                  </div>
+                  <button id="resetTheme" class="ghost-button big" type="button">Reset to defaults</button>
+                </div>
+              </div>
+            </section>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script src="/static/app.js?v=framework-costs-20260702"></script>
+    <script src="/static/theme.js?v=framework-costs-20260702"></script>
+  </body>
+</html>

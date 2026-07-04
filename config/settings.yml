@@ -1,0 +1,25 @@
+project:
+  name: NightFall Alpha
+  data_dir: data
+  seed: 42
+
+universe:
+  sample_file: data/universe/sp500_sample.csv
+  live_file: data/universe/sp500_constituents.csv
+
+backtest:
+  initial_capital: 1000000
+  fees_bps: 0.5
+  slippage_bps: 1.0
+
+strategy:
+  lookback_days: 63
+  min_history: 40
+  top_n: 25
+  max_weight: 0.07
+  min_signal: 0.0
+
+portfolio:
+  risk_free_rate: 0.0
+  cvar_alpha: 0.95
+  max_weight: 0.12
