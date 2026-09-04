@@ -1,0 +1,13 @@
+fastapi>=0.111
+uvicorn>=0.29
+pandas>=2.2
+numpy>=1.26
+pydantic>=2.7
+pydantic-settings>=2.2
+PyYAML>=6.0
+typer>=0.12
+ib-insync>=0.9.86
+yfinance>=0.2
+pandas-datareader>=0.10
+streamlit>=1.38
+plotly>=5.24

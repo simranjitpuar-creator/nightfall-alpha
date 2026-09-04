@@ -35,6 +35,32 @@ Startup behavior:
 
 NightFall Alpha no longer downloads market data automatically on launch. Use the Market Data tab when you want to refresh prices, or use the Portfolio Research builder's missing-data controls for targeted fills.
 
+## Streamlit deployment
+
+The repo includes a Streamlit Cloud entrypoint at:
+
+```text
+streamlit_app.py
+```
+
+Deploy it from Streamlit Community Cloud with:
+
+```text
+Repository: simranjitpuar-creator/nightfall-alpha
+Branch: main
+Main file path: streamlit_app.py
+```
+
+The Streamlit version uses the same NightFall Alpha Python research engine and recreates the local dashboard's tabs, dark fintech theme, metrics, portfolio builder, charts, trade blotter, CSV downloads, and framework notes. Streamlit Cloud will not include ignored local caches such as `data/processed/prices.csv` or `data/reports/*.csv`; use the Market Data page in the deployed app to refresh real Yahoo or Stooq data into that runtime.
+
+To run the Streamlit version locally:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py
+```
+
 ## Real data
 
 Install dependencies, then download real adjusted OHLCV data through `yfinance`:
