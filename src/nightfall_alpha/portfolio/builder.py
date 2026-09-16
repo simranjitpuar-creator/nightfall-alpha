@@ -6,9 +6,16 @@ from typing import Literal
 import pandas as pd
 
 from nightfall_alpha.data.schema import normalize_symbol
-from nightfall_alpha.portfolio.optimizers import OptimizerSuiteSettings, build_portfolio_suite, build_rebalanced_portfolio_suite
-from nightfall_alpha.portfolio.risk import close_to_close_return_matrix, overnight_return_matrix, prepare_optimization_matrix
-
+from nightfall_alpha.portfolio.optimizers import (
+    OptimizerSuiteSettings,
+    build_portfolio_suite,
+    build_rebalanced_portfolio_suite,
+)
+from nightfall_alpha.portfolio.risk import (
+    close_to_close_return_matrix,
+    overnight_return_matrix,
+    prepare_optimization_matrix,
+)
 
 PortfolioMethod = Literal[
     "best",

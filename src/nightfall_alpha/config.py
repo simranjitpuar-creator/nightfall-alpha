@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -7,6 +8,26 @@ from typing import Any
 import yaml
 
 from nightfall_alpha.paths import CONFIG_DIR, DATA_DIR
+
+ENV_PREFIX = "NIGHTFALL_ALPHA_"
+
+
+def _load_dotenv(dotenv_path: Path) -> dict[str, str]:
+    """Minimal .env reader: KEY=VALUE lines, no shell expansion, real env wins."""
+    values: dict[str, str] = {}
+    if not dotenv_path.exists():
+        return values
+    for line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _env(key: str) -> str | None:
+    return os.environ.get(key)
 
 
 @dataclass(frozen=True)
@@ -80,9 +101,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
     strategy = _section(raw, "strategy")
     portfolio = _section(raw, "portfolio")
 
+    dotenv = _load_dotenv(Path.cwd() / ".env")
+
+    def env_value(name: str) -> str | None:
+        return _env(f"{ENV_PREFIX}{name}") or dotenv.get(f"{ENV_PREFIX}{name}")
+
     project_settings = ProjectSettings(
         name=str(project.get("name", ProjectSettings.name)),
-        data_dir=_path(project.get("data_dir", DATA_DIR)),
+        data_dir=_path(env_value("DATA_DIR") or project.get("data_dir", DATA_DIR)),
         seed=int(project.get("seed", ProjectSettings.seed)),
     )
 
@@ -93,9 +119,9 @@ def load_settings(path: str | Path | None = None) -> Settings:
             live_file=_path(universe.get("live_file", project_settings.data_dir / "universe" / "sp500_constituents.csv")),
         ),
         backtest=BacktestSettings(
-            initial_capital=float(backtest.get("initial_capital", BacktestSettings.initial_capital)),
-            fees_bps=float(backtest.get("fees_bps", BacktestSettings.fees_bps)),
-            slippage_bps=float(backtest.get("slippage_bps", BacktestSettings.slippage_bps)),
+            initial_capital=float(env_value("INITIAL_CAPITAL") or backtest.get("initial_capital", BacktestSettings.initial_capital)),
+            fees_bps=float(env_value("FEES_BPS") or backtest.get("fees_bps", BacktestSettings.fees_bps)),
+            slippage_bps=float(env_value("SLIPPAGE_BPS") or backtest.get("slippage_bps", BacktestSettings.slippage_bps)),
         ),
         strategy=StrategySettings(
             lookback_days=int(strategy.get("lookback_days", StrategySettings.lookback_days)),

@@ -11,7 +11,6 @@ import pandas as pd
 from nightfall_alpha.data.schema import normalize_symbol, validate_prices_frame
 from nightfall_alpha.paths import DATA_DIR
 
-
 SP500_WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
 

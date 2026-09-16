@@ -12,13 +12,13 @@ from nightfall_alpha.config import (
     StrategySettings,
     UniverseSettings,
 )
-from nightfall_alpha.data.pipeline import run_research_pipeline
 from nightfall_alpha.dashboard.app import (
     PortfolioBuilderRequest,
     _effective_portfolio_lookback,
     _missing_symbols_from_prices,
     _should_refresh_portfolio_history,
 )
+from nightfall_alpha.data.pipeline import run_research_pipeline
 
 
 class DashboardPipelineTests(unittest.TestCase):

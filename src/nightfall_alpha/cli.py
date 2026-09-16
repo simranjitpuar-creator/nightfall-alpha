@@ -6,9 +6,13 @@ import typer
 import uvicorn
 
 from nightfall_alpha.config import load_settings
-from nightfall_alpha.data.pipeline import artifact_paths, download_real_market_data, load_or_create_prices, run_research_pipeline
+from nightfall_alpha.data.pipeline import (
+    artifact_paths,
+    download_real_market_data,
+    load_or_create_prices,
+    run_research_pipeline,
+)
 from nightfall_alpha.portfolio.builder import PortfolioBuildSpec, build_custom_portfolio, parse_symbols
-
 
 app = typer.Typer(help="NightFall Alpha overnight-effect research toolkit.")
 
@@ -23,7 +27,7 @@ def sample_data(
     settings = load_settings()
     prices = load_or_create_prices(settings, force=force, symbols_limit=symbols, start=start, end=end)
     paths = artifact_paths(settings)
-    typer.echo(f"Wrote {len(prices):,} OHLCV rows to {paths.prices_path}")
+    typer.echo(f"Wrote {len(prices):,} OHLCV rows to {paths.prices_parquet_path}")
 
 
 @app.command("backtest")

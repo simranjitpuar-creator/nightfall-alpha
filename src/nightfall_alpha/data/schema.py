@@ -4,7 +4,6 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-
 PRICE_COLUMNS = ["date", "symbol", "open", "high", "low", "close", "volume"]
 NUMERIC_PRICE_COLUMNS = ["open", "high", "low", "close", "volume"]
 

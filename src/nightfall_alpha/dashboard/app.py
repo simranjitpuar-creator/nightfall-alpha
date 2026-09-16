@@ -11,19 +11,18 @@ from pydantic import BaseModel, Field
 
 from nightfall_alpha.config import Settings, load_settings
 from nightfall_alpha.data.pipeline import (
-    artifact_paths,
     download_real_market_data,
-    ensure_reports,
     ensure_price_history_for_symbols,
+    ensure_reports,
     load_metrics,
     load_or_create_prices,
     load_report_csv,
+    price_cache_path,
     run_research_pipeline,
 )
 from nightfall_alpha.data.universe_metadata import load_universe_metadata
 from nightfall_alpha.portfolio.builder import PortfolioBuildSpec, build_custom_portfolio, parse_symbols
 from nightfall_alpha.portfolio.optimizers import OptimizerSuiteSettings
-
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -323,7 +322,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     price_cache: dict[str, object] = {"mtime": None, "frame": None}
 
     def cached_prices() -> pd.DataFrame:
-        path = artifact_paths(cfg).prices_path
+        path = price_cache_path(cfg)
         mtime = path.stat().st_mtime_ns if path.exists() else None
         cached_frame = price_cache.get("frame")
         if isinstance(cached_frame, pd.DataFrame) and price_cache.get("mtime") == mtime:
@@ -334,7 +333,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return prices
 
     def remember_prices(prices: pd.DataFrame) -> None:
-        path = artifact_paths(cfg).prices_path
+        path = price_cache_path(cfg)
         price_cache["frame"] = prices
         price_cache["mtime"] = path.stat().st_mtime_ns if path.exists() else None
 

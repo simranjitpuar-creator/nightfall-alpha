@@ -49,7 +49,7 @@ class OptimizerSuiteSettings:
         values: Mapping[str, object] | None,
         *,
         default_max_weight: float | None = 0.12,
-    ) -> "OptimizerSuiteSettings":
+    ) -> OptimizerSuiteSettings:
         if not values:
             return cls(default_max_weight=default_max_weight)
         allowed = set(cls.__dataclass_fields__)

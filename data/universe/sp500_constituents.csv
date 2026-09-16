@@ -38,12 +38,11 @@ APA,APA Corporation,Energy
 APD,Air Products,Materials
 APH,Amphenol,Information Technology
 APO,Apollo Global Management,Financials
-APP,AppLovin,Information Technology
+APP,AppLovin,Communication Services
 APTV,Aptiv,Consumer Discretionary
 ARE,Alexandria Real Estate Equities,Real Estate
 ARES,Ares Management,Financials
 ATO,Atmos Energy,Utilities
-AVB,AvalonBay Communities,Real Estate
 AVGO,Broadcom,Information Technology
 AVY,Avery Dennison,Materials
 AWK,American Water Works,Utilities
@@ -128,7 +127,7 @@ CVX,Chevron Corporation,Energy
 D,Dominion Energy,Utilities
 DAL,Delta Air Lines,Industrials
 DASH,DoorDash,Consumer Discretionary
-DD,DuPont,Materials
+DD,DuPont,Industrials
 DDOG,Datadog,Information Technology
 DE,Deere & Company,Industrials
 DECK,Deckers Brands,Consumer Discretionary
@@ -150,7 +149,6 @@ DUK,Duke Energy,Utilities
 DVA,DaVita,Health Care
 DVN,Devon Energy,Energy
 DXCM,Dexcom,Health Care
-EA,Electronic Arts,Communication Services
 EBAY,eBay Inc.,Consumer Discretionary
 ECHO,EchoStar,Communication Services
 ECL,Ecolab,Materials
@@ -164,7 +162,6 @@ EME,Emcor,Industrials
 EMR,Emerson Electric,Industrials
 EOG,EOG Resources,Energy
 EQIX,Equinix,Real Estate
-EQR,Equity Residential,Real Estate
 EQT,EQT Corporation,Energy
 ERIE,Erie Indemnity,Financials
 ES,Eversource Energy,Utilities
@@ -186,6 +183,7 @@ FDS,FactSet,Financials
 FDX,FedEx,Industrials
 FDXF,FedEx Freight,Industrials
 FE,FirstEnergy,Utilities
+FERG,Ferguson Enterprises,Industrials
 FFIV,"F5, Inc.",Information Technology
 FICO,Fair Isaac,Information Technology
 FIS,Fidelity National Information Services,Financials
@@ -319,7 +317,7 @@ MRNA,Moderna,Health Care
 MRSH,Marsh McLennan,Financials
 MRVL,Marvell Technology,Information Technology
 MS,Morgan Stanley,Financials
-MSCI,MSCI Inc.,Financials
+MSCI,MSCI,Financials
 MSFT,Microsoft,Information Technology
 MSI,Motorola Solutions,Information Technology
 MTB,M&T Bank,Financials
@@ -351,7 +349,7 @@ OKE,Oneok,Energy
 OMC,Omnicom Group,Communication Services
 ON,ON Semiconductor,Information Technology
 ORCL,Oracle Corporation,Information Technology
-ORLY,O’Reilly Automotive,Consumer Discretionary
+ORLY,O'Reilly Automotive,Consumer Discretionary
 OTIS,Otis Worldwide,Industrials
 OXY,Occidental Petroleum,Energy
 PANW,Palo Alto Networks,Information Technology
@@ -386,12 +384,13 @@ PYPL,PayPal,Financials
 Q,Qnity Electronics,Information Technology
 QCOM,Qualcomm,Information Technology
 RCL,Royal Caribbean Group,Consumer Discretionary
+RDDT,Reddit,Communication Services
 REG,Regency Centers,Real Estate
 REGN,Regeneron Pharmaceuticals,Health Care
 RF,Regions Financial Corporation,Financials
 RJF,Raymond James Financial,Financials
 RL,Ralph Lauren Corporation,Consumer Discretionary
-RMD,ResMed,Health Care
+RMD,ResMed|,Health Care
 ROK,Rockwell Automation,Industrials
 ROL,"Rollins, Inc.",Industrials
 ROP,Roper Technologies,Information Technology
@@ -469,6 +468,7 @@ VICI,Vici Properties,Real Estate
 VLO,Valero Energy,Energy
 VLTO,Veralto,Industrials
 VMC,Vulcan Materials Company,Materials
+VMRK,Vivmark Residential,Real Estate
 VRSK,Verisk Analytics,Industrials
 VRSN,Verisign,Information Technology
 VRT,Vertiv,Industrials

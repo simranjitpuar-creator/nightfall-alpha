@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,13 +12,12 @@ from nightfall_alpha.data.csv_provider import load_universe
 from nightfall_alpha.data.pipeline import download_real_market_data, run_research_pipeline
 from nightfall_alpha.data.yahoo_provider import fetch_sp500_constituents
 
-
 _refresh_thread: threading.Thread | None = None
 _refresh_lock = threading.Lock()
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def startup_refresh_status_path(settings: Settings) -> Path:

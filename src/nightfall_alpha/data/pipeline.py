@@ -7,10 +7,10 @@ from typing import Any
 
 import pandas as pd
 
-from nightfall_alpha.backtest.engine import BacktestConfig, BacktestResult, run_overnight_backtest
+from nightfall_alpha.backtest.engine import BacktestConfig, run_overnight_backtest
 from nightfall_alpha.backtest.metrics import performance_metrics
 from nightfall_alpha.config import Settings, load_settings
-from nightfall_alpha.data.csv_provider import load_universe, save_price_file
+from nightfall_alpha.data.csv_provider import load_universe
 from nightfall_alpha.data.schema import NUMERIC_PRICE_COLUMNS, PRICE_COLUMNS, normalize_symbol, validate_prices_frame
 from nightfall_alpha.data.stooq_provider import StooqDownloadResult, download_stooq_daily_prices
 from nightfall_alpha.data.synthetic import SyntheticMarketConfig, generate_synthetic_ohlcv
@@ -23,6 +23,7 @@ from nightfall_alpha.strategy.overnight import OvernightEffectConfig, generate_s
 @dataclass(frozen=True)
 class ResearchArtifacts:
     prices_path: Path
+    prices_parquet_path: Path
     signals_path: Path
     daily_path: Path
     equity_path: Path
@@ -40,6 +41,7 @@ def artifact_paths(settings: Settings) -> ResearchArtifacts:
     reports.mkdir(parents=True, exist_ok=True)
     return ResearchArtifacts(
         prices_path=processed / "prices.csv",
+        prices_parquet_path=processed / "prices.parquet",
         signals_path=reports / "signals.csv",
         daily_path=reports / "daily.csv",
         equity_path=reports / "equity.csv",
@@ -50,6 +52,19 @@ def artifact_paths(settings: Settings) -> ResearchArtifacts:
     )
 
 
+def price_cache_path(settings: Settings) -> Path:
+    """Live price-cache path: parquet is primary, legacy CSV is the fallback."""
+    paths = artifact_paths(settings)
+    if paths.prices_parquet_path.exists():
+        return paths.prices_parquet_path
+    return paths.prices_path
+
+
+def price_cache_exists(settings: Settings) -> bool:
+    paths = artifact_paths(settings)
+    return paths.prices_parquet_path.exists() or paths.prices_path.exists()
+
+
 def _read_price_cache_csv(path: Path) -> tuple[pd.DataFrame, bool]:
     try:
         return pd.read_csv(path), False
@@ -58,7 +73,12 @@ def _read_price_cache_csv(path: Path) -> tuple[pd.DataFrame, bool]:
 
 
 def load_price_cache(path: Path) -> pd.DataFrame:
-    raw, repaired = _read_price_cache_csv(path)
+    path = Path(path)
+    if path.suffix == ".parquet":
+        raw = pd.read_parquet(path)
+        repaired = False
+    else:
+        raw, repaired = _read_price_cache_csv(path)
     before = len(raw)
     raw = raw.loc[:, [column for column in PRICE_COLUMNS if column in raw.columns]].copy()
     raw = raw.dropna(subset=["date", "symbol"]).copy()
@@ -73,7 +93,30 @@ def load_price_cache(path: Path) -> pd.DataFrame:
     raw = raw.drop_duplicates(["date", "symbol"], keep="last")
     prices = validate_prices_frame(raw)
     if repaired or len(prices) != before:
-        prices.to_csv(path, index=False)
+        if path.suffix == ".parquet":
+            prices.to_parquet(path, index=False)
+        else:
+            prices.to_csv(path, index=False)
+    return prices
+
+
+def save_price_cache(settings: Settings, prices: pd.DataFrame) -> Path:
+    """Persist the price cache as parquet (primary format) and drop any legacy CSV."""
+    paths = artifact_paths(settings)
+    clean = validate_prices_frame(prices)
+    clean.to_parquet(paths.prices_parquet_path, index=False)
+    if paths.prices_path.exists():
+        paths.prices_path.unlink()
+    return paths.prices_parquet_path
+
+
+def load_price_cache_for_settings(settings: Settings) -> pd.DataFrame:
+    """Load the live price cache, migrating a legacy CSV cache to parquet on first read."""
+    paths = artifact_paths(settings)
+    if paths.prices_parquet_path.exists():
+        return load_price_cache(paths.prices_parquet_path)
+    prices = load_price_cache(paths.prices_path)
+    save_price_cache(settings, prices)
     return prices
 
 
@@ -85,10 +128,9 @@ def load_or_create_prices(
     end: str = "2025-12-31",
 ) -> pd.DataFrame:
     cfg = settings or load_settings()
-    paths = artifact_paths(cfg)
 
-    if paths.prices_path.exists() and not force:
-        return load_price_cache(paths.prices_path)
+    if price_cache_exists(cfg) and not force:
+        return load_price_cache_for_settings(cfg)
 
     universe_path = cfg.universe.live_file if cfg.universe.live_file.exists() else cfg.universe.sample_file
     universe = load_universe(universe_path)
@@ -102,7 +144,7 @@ def load_or_create_prices(
         symbols,
         SyntheticMarketConfig(start=start, end=end, seed=cfg.project.seed),
     )
-    save_price_file(prices, paths.prices_path)
+    save_price_cache(cfg, prices)
     return prices
 
 
@@ -117,7 +159,6 @@ def download_real_market_data(
     source: str = "yahoo",
 ) -> YahooDownloadResult | StooqDownloadResult:
     cfg = settings or load_settings()
-    paths = artifact_paths(cfg)
 
     if symbols:
         requested_symbols = symbols
@@ -148,9 +189,9 @@ def download_real_market_data(
     else:
         result = download_daily_prices(requested_symbols, start=start, end=end)
     prices = result.prices
-    if merge_existing and paths.prices_path.exists():
-        prices = merge_price_history(load_price_cache(paths.prices_path), result.prices)
-    save_price_file(prices, paths.prices_path)
+    if merge_existing and price_cache_exists(cfg):
+        prices = merge_price_history(load_price_cache_for_settings(cfg), result.prices)
+    save_price_cache(cfg, prices)
     return replace(result, prices=prices)
 
 
@@ -196,10 +237,9 @@ def ensure_price_history_for_symbols(
     refresh_existing: bool = False,
 ) -> tuple[pd.DataFrame, list[str], list[str]]:
     cfg = settings or load_settings()
-    paths = artifact_paths(cfg)
     requested = list(dict.fromkeys(normalize_symbol(symbol) for symbol in symbols if str(symbol).strip()))
 
-    existing = load_price_cache(paths.prices_path) if paths.prices_path.exists() else pd.DataFrame()
+    existing = load_price_cache_for_settings(cfg) if price_cache_exists(cfg) else pd.DataFrame()
     available = set(existing["symbol"].unique()) if not existing.empty else set()
     missing = [symbol for symbol in requested if symbol not in available]
     to_download = requested if refresh_existing else missing
@@ -214,7 +254,7 @@ def ensure_price_history_for_symbols(
             result = download_daily_prices(to_download, start=start, end=end)
         downloaded = result.returned_symbols
         existing = merge_price_history(existing, result.prices)
-        save_price_file(existing, paths.prices_path)
+        save_price_cache(cfg, existing)
 
     return existing, missing, downloaded
 

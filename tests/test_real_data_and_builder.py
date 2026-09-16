@@ -5,10 +5,10 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import pandas as pd
 
-from nightfall_alpha.data.yahoo_provider import _flatten_download
 from nightfall_alpha.data.pipeline import load_price_cache, merge_price_history
 from nightfall_alpha.data.stooq_provider import stooq_symbol
 from nightfall_alpha.data.universe_metadata import SECTOR_ETF_CODES
+from nightfall_alpha.data.yahoo_provider import _flatten_download
 from nightfall_alpha.portfolio.builder import PortfolioBuildSpec, build_custom_portfolio, parse_symbols
 
 

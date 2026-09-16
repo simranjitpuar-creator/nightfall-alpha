@@ -33,6 +33,7 @@ def stooq_symbol(symbol: str) -> str:
 def _import_stooq_reader():
     try:
         import inspect
+
         import pandas.util._decorators as pandas_decorators
 
         signature = inspect.signature(pandas_decorators.deprecate_kwarg)

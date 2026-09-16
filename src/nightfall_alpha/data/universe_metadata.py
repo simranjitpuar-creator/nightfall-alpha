@@ -8,8 +8,6 @@ import pandas as pd
 from nightfall_alpha.config import Settings, load_settings
 from nightfall_alpha.data.csv_provider import load_universe
 from nightfall_alpha.data.schema import normalize_symbol
-from nightfall_alpha.paths import DATA_DIR
-
 
 SECTOR_ETF_CODES = {
     "Communication Services": "XLC",

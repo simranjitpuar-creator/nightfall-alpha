@@ -115,7 +115,11 @@ def inject_css() -> None:
     st.markdown(
         """
         <style>
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap");
         :root {
+          --radius: 16px;
+          --radius-sm: 10px;
+          --radius-xs: 8px;
           --nf-bg: #070b16;
           --nf-bg-2: #0b1120;
           --nf-panel: rgba(255, 255, 255, 0.045);
@@ -129,6 +133,17 @@ def inject_css() -> None:
           --nf-accent-2: #22d3ee;
           --nf-gain: #34d399;
           --nf-loss: #fb7185;
+          --nf-warn: #fbbf24;
+        }
+        html, body, .stApp, [class*="css"] {
+          font-family: Inter, "Segoe UI", system-ui, sans-serif;
+          letter-spacing: 0;
+        }
+        #MainMenu, footer { visibility: hidden; }
+        header[data-testid="stHeader"] {
+          background: color-mix(in srgb, var(--nf-bg) 72%, transparent);
+          border-bottom: 1px solid var(--nf-border);
+          backdrop-filter: blur(16px);
         }
         .stApp {
           background:
@@ -137,23 +152,67 @@ def inject_css() -> None:
             var(--nf-bg);
           color: var(--nf-text);
         }
+        .block-container {
+          max-width: none;
+          padding: 0 28px 48px;
+        }
         [data-testid="stSidebar"] {
           background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
           border-right: 1px solid var(--nf-border);
+          box-shadow: 18px 0 48px -42px rgba(0, 0, 0, 0.95);
         }
+        [data-testid="stSidebar"] > div:first-child { padding: 20px 14px; }
         [data-testid="stSidebar"] * { color: var(--nf-text); }
+        [data-testid="stSidebar"] [role="radiogroup"] {
+          display: grid;
+          gap: 4px;
+          margin-top: 6px;
+        }
         [data-testid="stSidebar"] [role="radiogroup"] label {
+          position: relative;
+          min-height: 44px;
           border: 1px solid transparent;
           border-radius: 12px;
-          padding: 8px 10px;
+          padding: 9px 12px;
           margin: 3px 0;
+          color: var(--nf-muted);
+          font-size: 13.5px;
+          font-weight: 700;
+          transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.15s;
+        }
+        [data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
+          display: none;
         }
         [data-testid="stSidebar"] [role="radiogroup"] label:hover {
           background: rgba(255,255,255,.045);
           border-color: rgba(99,102,241,.25);
+          transform: translateX(2px);
         }
-        h1, h2, h3, h4 { color: var(--nf-strong); letter-spacing: 0; }
-        .block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1760px; }
+        [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+          color: var(--nf-strong);
+          background: linear-gradient(100deg, rgba(99,102,241,.22), rgba(99,102,241,.06));
+          border-color: rgba(99,102,241,.35);
+          box-shadow: 0 6px 18px -10px rgba(99,102,241,.7);
+        }
+        [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked)::before {
+          content: "";
+          position: absolute;
+          left: -14px;
+          top: 20%;
+          bottom: 20%;
+          width: 4px;
+          border-radius: 0 4px 4px 0;
+          background: linear-gradient(var(--nf-accent), var(--nf-accent-2));
+        }
+        h1, h2, h3, h4 {
+          color: var(--nf-strong);
+          letter-spacing: 0;
+        }
+        h2, h3 {
+          font-size: 15px;
+          font-weight: 800;
+          margin: 0 0 12px;
+        }
         .nf-brand {
           display: flex;
           align-items: center;
@@ -170,18 +229,74 @@ def inject_css() -> None:
           border-radius: 12px;
           background: linear-gradient(150deg, rgba(99,102,241,.22), rgba(34,211,238,.18));
           border: 1px solid var(--nf-border);
+          box-shadow: inset 0 0 18px rgba(99,102,241,.20);
           color: var(--nf-accent-2);
           font-weight: 900;
         }
-        .nf-brand-name { font-size: 16px; font-weight: 800; color: var(--nf-strong); }
+        .nf-brand-name {
+          font-size: 16px;
+          font-weight: 800;
+          color: var(--nf-strong);
+          background: linear-gradient(90deg, var(--nf-strong), var(--nf-accent-2));
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
         .nf-brand-tag { font-size: 11px; color: var(--nf-muted); font-weight: 600; }
+        .nf-topbar {
+          position: sticky;
+          top: 0;
+          z-index: 4;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          min-height: 76px;
+          margin: 0 -28px 22px;
+          padding: 18px 28px;
+          background: color-mix(in srgb, var(--nf-bg) 72%, transparent);
+          border-bottom: 1px solid var(--nf-border);
+          backdrop-filter: blur(16px);
+        }
+        .nf-topbar h1 {
+          margin: 0 0 2px;
+          font-size: 22px;
+          font-weight: 800;
+          line-height: 1.15;
+        }
+        .nf-topbar-actions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+        }
+        .nf-status-pill {
+          display: inline-flex;
+          align-items: center;
+          min-height: 34px;
+          padding: 0 12px;
+          border: 1px solid var(--nf-border);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.045);
+          color: var(--nf-muted);
+          font-size: 12px;
+          font-weight: 700;
+        }
         .nf-panel {
           padding: 18px 20px;
           border: 1px solid var(--nf-border);
-          border-radius: 16px;
+          border-radius: var(--radius);
           background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+          backdrop-filter: blur(14px);
           box-shadow: 0 18px 40px -24px rgba(0,0,0,.8);
           margin-bottom: 18px;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .nf-panel h3 {
+          margin: 0 0 12px;
+          font-size: 15px;
+          font-weight: 800;
         }
         .nf-heading {
           display: flex;
@@ -205,10 +320,12 @@ def inject_css() -> None:
           position: relative;
           min-height: 88px;
           padding: 15px 16px;
-          border-radius: 10px;
+          border-radius: var(--radius-sm);
           background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
           border: 1px solid var(--nf-border);
+          box-shadow: 0 8px 24px -16px rgba(0,0,0,.7);
           overflow: hidden;
+          transition: transform 0.18s, border-color 0.2s;
         }
         .nf-card:before {
           content: "";
@@ -218,11 +335,16 @@ def inject_css() -> None:
           background: linear-gradient(90deg, var(--nf-accent), var(--nf-accent-2));
           opacity: .7;
         }
+        .nf-card:hover {
+          transform: translateY(-3px);
+          border-color: rgba(99,102,241,.40);
+        }
         .nf-label {
           color: var(--nf-muted);
           font-size: 11.5px;
           font-weight: 700;
           text-transform: uppercase;
+          letter-spacing: 0;
         }
         .nf-value {
           margin-top: 10px;
@@ -242,32 +364,125 @@ def inject_css() -> None:
           font-weight: 800;
           box-shadow: 0 10px 24px -12px rgba(99,102,241,.9);
         }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+          filter: brightness(1.06);
+          transform: translateY(-1px);
+          border-color: rgba(255,255,255,.18);
+        }
         .stButton > button[kind="secondary"], .stDownloadButton > button[kind="secondary"] {
           background: rgba(255,255,255,.045);
           color: var(--nf-text);
           box-shadow: none;
+        }
+        div[data-testid="stForm"] {
+          padding: 18px 20px 22px;
+          border: 1px solid var(--nf-border);
+          border-radius: var(--radius);
+          background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+          box-shadow: 0 18px 40px -24px rgba(0,0,0,.8);
+          margin-bottom: 20px;
+        }
+        div[data-testid="stForm"] div[data-testid="stFormSubmitButton"] button {
+          width: 100%;
+        }
+        div[data-testid="stExpander"] {
+          border: 1px solid var(--nf-line);
+          border-radius: var(--radius-xs);
+          background: color-mix(in srgb, var(--nf-panel) 72%, transparent);
+          overflow: hidden;
+        }
+        div[data-testid="stExpander"] details > summary {
+          min-height: 46px;
+          padding: 12px 14px;
+          color: var(--nf-strong);
+          font-size: 13px;
+          font-weight: 800;
+          border-bottom: 1px solid transparent;
+        }
+        div[data-testid="stExpander"] details[open] > summary {
+          border-bottom-color: var(--nf-line);
+          background: rgba(255,255,255,.025);
+        }
+        label[data-testid="stWidgetLabel"] p,
+        .stTextInput label p,
+        .stNumberInput label p,
+        .stSelectbox label p,
+        .stDateInput label p,
+        .stMultiSelect label p,
+        .stTextArea label p,
+        .stCheckbox label p {
+          color: var(--nf-muted);
+          font-size: 11.5px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0;
         }
         div[data-baseweb="input"] > div,
         div[data-baseweb="select"] > div,
         textarea {
           background: rgba(255,255,255,.045) !important;
           border-color: rgba(255,255,255,.12) !important;
-          border-radius: 8px !important;
+          border-radius: var(--radius-xs) !important;
+          min-height: 40px;
+          color: var(--nf-text) !important;
         }
-        .stDataFrame {
+        div[data-baseweb="input"] > div:focus-within,
+        div[data-baseweb="select"] > div:focus-within,
+        textarea:focus {
+          border-color: var(--nf-accent) !important;
+          box-shadow: 0 0 0 3px rgba(99,102,241,.18) !important;
+        }
+        input, textarea, select {
+          color: var(--nf-text) !important;
+          font: inherit !important;
+        }
+        div[data-testid="stPlotlyChart"] {
+          padding: 10px;
+          border: 1px solid var(--nf-border);
+          border-radius: var(--radius-sm);
+          background: rgba(255,255,255,.018);
+          box-shadow: 0 8px 24px -18px rgba(0,0,0,.7);
+        }
+        .stDataFrame, div[data-testid="stDataFrame"] {
           border: 1px solid var(--nf-border);
           border-radius: 12px;
           overflow: hidden;
+          background: rgba(255,255,255,.018);
+          box-shadow: 0 8px 24px -18px rgba(0,0,0,.7);
+        }
+        div[data-testid="stDataFrame"] [role="columnheader"] {
+          background: rgba(255,255,255,.035);
+          color: var(--nf-muted);
+          text-transform: uppercase;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0;
+        }
+        div[data-testid="stProgress"] > div > div > div {
+          background: linear-gradient(90deg, var(--nf-accent), var(--nf-accent-2));
+        }
+        div[data-testid="stAlert"] {
+          border-radius: var(--radius-sm);
+          border-color: var(--nf-border);
+          background: rgba(255,255,255,.045);
         }
         .nf-help {
           color: var(--nf-muted);
           font-size: 12.5px;
           line-height: 1.55;
         }
+        .nf-help code,
+        .stCodeBlock code,
+        code {
+          font-family: "JetBrains Mono", ui-monospace, monospace;
+        }
         @media (max-width: 1180px) {
           .nf-metric-grid { grid-template-columns: repeat(3, minmax(132px, 1fr)); }
         }
         @media (max-width: 760px) {
+          .block-container { padding: 0 16px 32px; }
+          .nf-topbar { margin: 0 -16px 18px; padding: 16px; align-items: flex-start; }
+          .nf-status-pill { display: none; }
           .nf-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         </style>
@@ -350,10 +565,13 @@ def metric_grid(source: dict[str, Any], specs: list[tuple[str, str, str]] = METR
 def page_heading(title: str, subtitle: str | None = None) -> None:
     st.markdown(
         f"""
-        <div class="nf-heading">
-          <div>
-            <h1 style="margin-bottom: 2px;">{title}</h1>
+        <div class="nf-topbar">
+          <div class="nf-topbar-title">
+            <h1>{title}</h1>
             <div class="nf-subtle">{subtitle or ""}</div>
+          </div>
+          <div class="nf-topbar-actions">
+            <span class="nf-status-pill">Research dashboard</span>
           </div>
         </div>
         """,
@@ -1015,6 +1233,7 @@ def framework_page() -> None:
 def settings_page() -> None:
     page_heading("Settings", "Streamlit uses the NightFall Alpha visual theme and a fixed deployment palette.")
     paths = artifact_paths(settings())
+    price_path = paths.prices_parquet_path if paths.prices_parquet_path.exists() else paths.prices_path
     st.markdown('<div class="nf-panel">', unsafe_allow_html=True)
     st.write("Local runtime paths are intentionally not displayed in the deployed app or README.")
     st.write("Generated data, reports, logs, and virtual environments are ignored by Git.")
@@ -1022,7 +1241,7 @@ def settings_page() -> None:
     st.code(
         "\n".join(
             [
-                f"prices: {project_path(paths.prices_path)}",
+                f"prices: {project_path(price_path)}",
                 f"reports: {project_path(paths.daily_path.parent)}",
                 "streamlit entrypoint: streamlit_app.py",
             ]
