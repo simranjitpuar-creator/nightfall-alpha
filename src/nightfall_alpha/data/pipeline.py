@@ -11,6 +11,7 @@ from nightfall_alpha.backtest.engine import BacktestConfig, run_overnight_backte
 from nightfall_alpha.backtest.metrics import performance_metrics
 from nightfall_alpha.config import Settings, load_settings
 from nightfall_alpha.data.csv_provider import load_universe
+from nightfall_alpha.data.membership import apply_membership, load_membership, membership_path, membership_summary
 from nightfall_alpha.data.schema import NUMERIC_PRICE_COLUMNS, PRICE_COLUMNS, normalize_symbol, validate_prices_frame
 from nightfall_alpha.data.stooq_provider import StooqDownloadResult, download_stooq_daily_prices
 from nightfall_alpha.data.synthetic import SyntheticMarketConfig, generate_synthetic_ohlcv
@@ -31,6 +32,8 @@ class ResearchArtifacts:
     metrics_path: Path
     portfolio_summary_path: Path
     portfolio_weights_path: Path
+    walkforward_folds_path: Path
+    walkforward_daily_path: Path
 
 
 def artifact_paths(settings: Settings) -> ResearchArtifacts:
@@ -49,6 +52,8 @@ def artifact_paths(settings: Settings) -> ResearchArtifacts:
         metrics_path=reports / "metrics.json",
         portfolio_summary_path=reports / "portfolio_summary.csv",
         portfolio_weights_path=reports / "portfolio_weights.csv",
+        walkforward_folds_path=reports / "walkforward_folds.csv",
+        walkforward_daily_path=reports / "walkforward_daily.csv",
     )
 
 
@@ -273,6 +278,11 @@ def run_research_pipeline(
     initial_capital: float | None = None,
     fees_bps: float | None = None,
     slippage_bps: float | None = None,
+    cost_model: str | None = None,
+    capital_capacity: float | None = None,
+    cash_rate: float | None = None,
+    max_adv_participation: float | None = None,
+    apply_index_membership: bool = True,
 ) -> dict[str, Any]:
     cfg = settings or load_settings()
     paths = artifact_paths(cfg)
@@ -303,6 +313,16 @@ def run_research_pipeline(
 
     prices = filter_price_history(prices, start=price_start, end=price_end, symbols=price_symbols)
 
+    # Point-in-time index membership: when a membership file exists, mask price
+    # rows to the periods each symbol was actually in the index. Without it, the
+    # metrics carry an explicit survivorship-bias warning.
+    membership = None
+    membership_file = membership_path(cfg.project.data_dir)
+    if apply_index_membership and membership_file.exists():
+        membership = load_membership(membership_file)
+        prices = apply_membership(prices, membership)
+    survivorship = membership_summary(prices, membership)
+
     strategy_values = {
         "lookback_days": cfg.strategy.lookback_days,
         "min_history": cfg.strategy.min_history,
@@ -328,6 +348,14 @@ def run_research_pipeline(
         initial_capital=backtest_initial_capital,
         fees_bps=backtest_fees_bps,
         slippage_bps=backtest_slippage_bps,
+        cost_model=str(cost_model if cost_model is not None else cfg.backtest.cost_model),
+        capital_capacity=(
+            float(capital_capacity) if capital_capacity is not None else cfg.backtest.capital_capacity
+        ),
+        cash_rate=float(cash_rate if cash_rate is not None else cfg.backtest.cash_rate),
+        max_adv_participation=(
+            float(max_adv_participation) if max_adv_participation is not None else cfg.backtest.max_adv_participation
+        ),
     )
 
     signals = generate_signals(prices, strategy_config)
@@ -341,7 +369,12 @@ def run_research_pipeline(
         "initial_capital": backtest_initial_capital,
         "fees_bps": backtest_fees_bps,
         "slippage_bps": backtest_slippage_bps,
+        "cost_model": backtest_config.build_cost_model().describe(),
+        "capital_capacity": backtest_config.capital_capacity,
+        "cash_rate": backtest_config.cash_rate,
+        "max_adv_participation": backtest_config.max_adv_participation,
     }
+    metrics["survivorship"] = survivorship
     metrics["strategy"] = {
         "lookback_days": strategy_config.lookback_days,
         "min_history": strategy_config.min_history,

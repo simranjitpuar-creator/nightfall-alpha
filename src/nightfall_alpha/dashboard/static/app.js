@@ -867,7 +867,10 @@ function finishTaskProgress(id, label, failed = false) {
 const TAB_TITLES = {
   data: "Market Data",
   signal: "Signal Backtest",
+  benchmarks: "Benchmarks",
+  walkforward: "Walk-Forward",
   portfolio: "Portfolio Research",
+  trades: "Trade Blotter",
   framework: "Framework",
   settings: "Settings",
 };
@@ -903,9 +906,19 @@ function syncBacktestControls(strategy) {
   setNumberInput("signalTopN", strategy.top_n);
   setNumberInput("signalMaxWeight", strategy.max_weight);
   setNumberInput("signalMinSignal", strategy.min_signal);
+  if (strategy.cost_model) {
+    const select = document.getElementById("signalCostModel");
+    if (select) select.value = strategy.cost_model.mode || "flat";
+  }
+  setNumberInput("signalCapitalCapacity", strategy.capital_capacity || 0);
+  setNumberInput("signalCashRate", (strategy.cash_rate || 0) * 100);
+  setNumberInput("signalAdvParticipation", (strategy.max_adv_participation || 0) * 100);
 }
 
 function backtestPayload() {
+  const capacity = Number(document.getElementById("signalCapitalCapacity").value || 0);
+  const cashRatePct = Number(document.getElementById("signalCashRate").value || 0);
+  const advPct = Number(document.getElementById("signalAdvParticipation").value || 0);
   return {
     initial_capital: Number(document.getElementById("signalInitialEquity").value || 1000000),
     fees_bps: Number(document.getElementById("signalFeesBps").value || 0),
@@ -915,10 +928,29 @@ function backtestPayload() {
     top_n: Number(document.getElementById("signalTopN").value || 25),
     max_weight: Number(document.getElementById("signalMaxWeight").value || 0.07),
     min_signal: Number(document.getElementById("signalMinSignal").value || 0),
+    cost_model: document.getElementById("signalCostModel").value || "flat",
+    capital_capacity: capacity > 0 ? capacity : null,
+    cash_rate: cashRatePct / 100,
+    max_adv_participation: advPct > 0 ? advPct / 100 : null,
     price_start: document.getElementById("signalPriceStart").value || null,
     price_end: document.getElementById("signalPriceEnd").value || null,
     price_symbols: document.getElementById("signalPriceTickers").value || null,
   };
+}
+
+function renderSurvivorship(survivorship) {
+  const banner = document.getElementById("survivorshipBanner");
+  if (!banner) return;
+  const warning = survivorship && survivorship.warning;
+  if (!warning) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  banner.classList.toggle("info", Boolean(survivorship.point_in_time));
+  banner.textContent = survivorship.point_in_time
+    ? `Point-in-time index membership active. ${warning}`
+    : `Survivorship bias warning: ${warning}`;
 }
 
 function syncSignalWindowFromDownloadInputs() {
@@ -1647,7 +1679,12 @@ async function loadDashboard() {
     initial_capital: backtest.initial_capital,
     fees_bps: backtest.fees_bps,
     slippage_bps: backtest.slippage_bps,
+    cost_model: backtest.cost_model,
+    capital_capacity: backtest.capital_capacity,
+    cash_rate: backtest.cash_rate,
+    max_adv_participation: backtest.max_adv_participation,
   });
+  renderSurvivorship(overview.survivorship);
   syncSignalWindowFromOverview(overview.data_window);
 
   document.getElementById("asOf").textContent = overview.latest_signal_date
@@ -2017,10 +2054,205 @@ function syncLookbackMode() {
   syncBuilderHistoryControls();
 }
 
+const SERIES_PALETTE = ["#22d3ee", "#a78bfa", "#f59e0b", "#34d399", "#fb7185", "#f472b6"];
+
+function drawMultiLineChart(canvasId, rows, columns, title) {
+  const { context, width, height } = getCanvasContext(canvasId);
+  context.clearRect(0, 0, width, height);
+  if (!rows.length || !columns.length) {
+    drawEmptyChart(context, width, height, title);
+    return;
+  }
+  const allValues = [];
+  rows.forEach((row) => {
+    columns.forEach((column) => {
+      const value = Number(row[column]);
+      if (Number.isFinite(value)) allValues.push(value);
+    });
+  });
+  if (!allValues.length) {
+    drawEmptyChart(context, width, height, title);
+    return;
+  }
+  const { min, max } = expandBounds(allValues);
+  const area = drawChartAxes(context, rows, {
+    width,
+    height,
+    title,
+    xLabel: "Date",
+    yLabel: "Growth of $1",
+    min,
+    max,
+    formatY: (value) => `$${formatNumber(value, 2)}`,
+  });
+  columns.forEach((column, seriesIndex) => {
+    context.beginPath();
+    context.strokeStyle = SERIES_PALETTE[seriesIndex % SERIES_PALETTE.length];
+    context.lineWidth = 2;
+    let started = false;
+    rows.forEach((row, index) => {
+      const value = Number(row[column]);
+      if (!Number.isFinite(value)) return;
+      const x = xForIndex(index, rows, area);
+      const y = yForValue(value, min, max, area);
+      if (!started) {
+        context.moveTo(x, y);
+        started = true;
+      } else {
+        context.lineTo(x, y);
+      }
+    });
+    context.stroke();
+  });
+  // Legend
+  context.font = `12px ${CHART_FONT}`;
+  let legendX = area.left + 8;
+  columns.forEach((column, seriesIndex) => {
+    context.fillStyle = SERIES_PALETTE[seriesIndex % SERIES_PALETTE.length];
+    context.fillRect(legendX, area.top - 18, 10, 10);
+    context.fillStyle = chartColors().text;
+    context.fillText(column, legendX + 14, area.top - 9);
+    legendX += context.measureText(column).width + 34;
+  });
+}
+
+async function loadBenchmarks(event) {
+  if (event) event.preventDefault();
+  const button = document.getElementById("benchmarkButton");
+  const status = document.getElementById("benchmarkStatus");
+  const keys = [...document.querySelectorAll('input[name="benchKey"]:checked')].map((input) => input.value);
+  if (!keys.length) {
+    toast("Select at least one benchmark");
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "Comparing";
+  startTaskProgress("taskProgress", "Comparing against benchmarks...");
+  try {
+    const refresh = document.getElementById("benchmarkRefresh").value === "true";
+    const result = await fetchJson(`/api/benchmarks?keys=${keys.join(",")}&refresh=${refresh}`);
+    const body = document.getElementById("benchmarkBody");
+    body.innerHTML = "";
+    (result.summary || []).forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${row.benchmark || row.key}</td>
+        <td>${formatByType(row.observations, "integer")}</td>
+        <td>${formatPct(row.strategy_cagr)}</td>
+        <td>${formatPct(row.benchmark_cagr)}</td>
+        <td>${formatNumber(row.benchmark_sharpe)}</td>
+        <td>${formatPct(row.benchmark_max_drawdown)}</td>
+        <td>${formatNumber(row.correlation)}</td>
+        <td>${formatNumber(row.beta)}</td>
+        <td>${formatPct(row.alpha_annualized)}</td>
+        <td>${formatNumber(row.information_ratio)}</td>
+        <td>${formatNumber(row.up_capture)}</td>
+        <td>${formatNumber(row.down_capture)}</td>
+      `;
+      body.appendChild(tr);
+    });
+    const curves = result.curves || [];
+    const columns = curves.length
+      ? Object.keys(curves[0]).filter((key) => key !== "date")
+      : [];
+    drawMultiLineChart("benchmarkChart", curves, columns, "Strategy vs Benchmarks");
+    status.textContent = `${(result.summary || []).length} benchmarks`;
+    if ((result.unknown_keys || []).length) {
+      toast(`Unknown benchmark keys ignored: ${result.unknown_keys.join(", ")}`);
+    }
+    finishTaskProgress("taskProgress", "Benchmark comparison complete");
+  } catch (error) {
+    status.textContent = "Failed";
+    finishTaskProgress("taskProgress", "Benchmark comparison failed", true);
+    toast(`Benchmark comparison failed: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function runWalkforward(event) {
+  if (event) event.preventDefault();
+  const button = document.getElementById("walkforwardButton");
+  const status = document.getElementById("walkforwardStatus");
+  button.disabled = true;
+  status.textContent = "Running";
+  startTaskProgress("taskProgress", "Running walk-forward folds...");
+  try {
+    const maxFolds = Number(document.getElementById("wfMaxFolds").value || 0);
+    const result = await fetchJson("/api/walkforward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        train_days: Number(document.getElementById("wfTrainDays").value || 756),
+        test_days: Number(document.getElementById("wfTestDays").value || 63),
+        step_days: Number(document.getElementById("wfStepDays").value || 63),
+        max_folds: maxFolds > 0 ? maxFolds : null,
+        start_date: document.getElementById("wfStartDate").value || null,
+        selection_metric: document.getElementById("wfMetric").value || "sharpe",
+        cost_model: document.getElementById("wfCostModel").value || "flat",
+      }),
+    });
+    const grid = document.getElementById("walkforwardGrid");
+    grid.innerHTML = "";
+    const metrics = result.oos_metrics || {};
+    const tiles = [
+      ["OOS Sharpe", metrics.sharpe, "number"],
+      ["OOS CAGR", metrics.cagr, "pct"],
+      ["OOS Max Drawdown", metrics.max_drawdown, "pct"],
+      ["Avg In-Sample Train Sharpe", result.in_sample_average_sharpe, "number"],
+    ];
+    tiles.forEach(([label, value, type]) => {
+      const tile = document.createElement("article");
+      tile.className = "metric";
+      tile.innerHTML = `
+        <div class="metric-label">${label}</div>
+        <div class="metric-value">${formatByType(value, type)}</div>
+      `;
+      grid.appendChild(tile);
+    });
+    const meta = document.getElementById("walkforwardMeta");
+    if (meta && metrics.sharpe !== null && metrics.sharpe !== undefined && result.in_sample_average_sharpe) {
+      const decay = 1 - Number(metrics.sharpe) / Number(result.in_sample_average_sharpe);
+      meta.textContent = Number.isFinite(decay)
+        ? `in-sample to out-of-sample Sharpe decay ${formatPct(decay, 0)}`
+        : "";
+    }
+    const body = document.getElementById("walkforwardBody");
+    body.innerHTML = "";
+    (result.folds || []).forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${row.fold}</td>
+        <td>${row.train_start} to ${row.train_end}</td>
+        <td>${row.test_start} to ${row.test_end}</td>
+        <td>${row.lookback_days}</td>
+        <td>${row.top_n}</td>
+        <td>${formatNumber(row.train_metric)}</td>
+        <td>${formatNumber(row.oos_sharpe)}</td>
+        <td>${formatPct(row.oos_cagr)}</td>
+        <td>${formatPct(row.oos_max_drawdown)}</td>
+      `;
+      body.appendChild(tr);
+    });
+    drawMultiLineChart("walkforwardChart", result.oos_curve || [], ["equity"], "Stitched Out-of-Sample Equity");
+    status.textContent = `${(result.folds || []).length} folds`;
+    finishTaskProgress("taskProgress", "Walk-forward complete");
+    toast("Walk-forward complete");
+  } catch (error) {
+    status.textContent = "Failed";
+    finishTaskProgress("taskProgress", "Walk-forward failed", true);
+    toast(`Walk-forward failed: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 document.getElementById("refreshButton").addEventListener("click", () => {
   loadDashboard().then(() => toast("Dashboard refreshed")).catch((error) => toast(error.message));
 });
 document.getElementById("backtestForm").addEventListener("submit", rerun);
+document.getElementById("benchmarkForm").addEventListener("submit", loadBenchmarks);
+document.getElementById("walkforwardForm").addEventListener("submit", runWalkforward);
 document.getElementById("dataForm").addEventListener("submit", downloadRealData);
 document.getElementById("portfolioForm").addEventListener("submit", buildPortfolio);
 document.getElementById("downloadBuilderSummaryCsv").addEventListener("click", downloadBuilderSummaryCsv);

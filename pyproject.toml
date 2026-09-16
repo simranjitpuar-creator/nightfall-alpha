@@ -54,3 +54,4 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B"]
 "src/nightfall_alpha/dashboard/app.py" = ["B008"]  # FastAPI Body(...) defaults are the framework idiom
+"streamlit_app.py" = ["E402"]  # sys.path bootstrap must precede package imports

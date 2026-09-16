@@ -11,6 +11,17 @@ backtest:
   initial_capital: 1000000
   fees_bps: 0.5
   slippage_bps: 1.0
+  # cost_model: flat uses fees_bps + slippage_bps for every date.
+  # cost_model: historical uses the era table in backtest/costs.py
+  # (fixed commissions and wide spreads in early decades, modern costs today).
+  cost_model: flat
+  # capital_capacity caps deployable capital; excess equity sits in cash earning cash_rate.
+  # Set e.g. 250000000 to model a realistic capacity ceiling. null = unlimited.
+  capital_capacity: null
+  cash_rate: 0.0
+  # max_adv_participation caps each position's notional at this fraction of the
+  # symbol's 20-day median dollar volume (ADV). null = no liquidity constraint.
+  max_adv_participation: null
 
 strategy:
   lookback_days: 63

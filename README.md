@@ -8,11 +8,16 @@ NightFall Alpha is a research and dashboard project for the overnight effect: en
 - CSV ingestion hooks plus Yahoo Finance downloads for adjusted daily OHLCV data.
 - Overnight-effect feature engineering and signal ranking.
 - A vectorized backtest with fees, slippage, equity curve, trade blotter, and drawdowns.
+- An era-based historical cost model (toggle between flat bps and decade-appropriate commissions/spreads).
+- Capacity modeling: a deployable-capital ceiling with a cash yield on the undeployed remainder, plus per-symbol ADV participation caps.
+- Point-in-time index membership support to control survivorship bias (optional `data/universe/sp500_membership.csv`), with an explicit dashboard warning when it is absent.
+- Benchmark comparison against S&P 500, S&P 100, Nasdaq Composite, MSCI World (URTH proxy), and approximate 10-year Treasury total returns.
+- Walk-forward / out-of-sample evaluation: parameters are re-fit on rolling training windows and scored on the following unseen windows.
 - Performance metrics: CAGR, Sharpe, Sortino, max drawdown, Calmar, VaR, CVaR, win rate, profit factor, exposure, turnover, and more.
 - Portfolio construction styles: Kelly, mean variance, minimum variance, inverse volatility, CVaR-aware, and Black-Litterman-style posterior returns.
 - A custom portfolio builder where you choose tickers or let the app select the best optimizer result.
 - A FastAPI dashboard with native browser charts.
-- Unit tests for strategy features, risk metrics, and optimizer constraints.
+- Unit tests for strategy features, risk metrics, optimizer constraints, cost models, capacity, membership, benchmarks, and walk-forward evaluation.
 
 ## Quick start
 
@@ -28,6 +33,8 @@ $env:PYTHONPATH = "src"
 .\.venv\Scripts\python.exe -m nightfall_alpha.cli backtest
 .\.venv\Scripts\python.exe -m nightfall_alpha.cli dashboard --port 8776
 ```
+
+Optional extras: `pip install -e ".[streamlit]"` for the Streamlit UI, `pip install -e ".[broker]"` for the future Interactive Brokers adapter, and `pip install -e ".[dev]"` for the ruff linter.
 
 Then open [http://127.0.0.1:8776](http://127.0.0.1:8776). NightFall Alpha uses `8776` by default so it does not collide with other local dashboards that may already use `8765`.
 
@@ -51,7 +58,7 @@ Branch: main
 Main file path: streamlit_app.py
 ```
 
-The Streamlit version uses the same NightFall Alpha Python research engine and recreates the local dashboard's tabs, dark fintech theme, metrics, portfolio builder, charts, trade blotter, CSV downloads, and framework notes. Streamlit Cloud will not include ignored local caches such as `data/processed/prices.csv` or `data/reports/*.csv`; use the Market Data page in the deployed app to refresh real Yahoo or Stooq data into that runtime.
+The Streamlit version uses the same NightFall Alpha Python research engine and recreates the local dashboard's tabs, dark fintech theme, metrics, portfolio builder, benchmark comparison, walk-forward evaluation, charts, trade blotter, CSV downloads, and framework notes. Streamlit Cloud will not include ignored local caches such as `data/processed/prices.parquet` or `data/reports/*`; use the Market Data page in the deployed app to refresh real Yahoo or Stooq data into that runtime.
 
 To run the Streamlit version locally:
 
@@ -61,13 +68,45 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run streamlit_app.py
 ```
 
+## Cost models, capacity, and survivorship
+
+The backtest supports two cost models, selectable in the dashboards, the CLI, and `config/settings.yml`:
+
+- `flat`: the configured `fees_bps` + `slippage_bps` apply to every date.
+- `historical`: an era-based table (`src/nightfall_alpha/backtest/costs.py`) charges realistic costs for the period — fixed commissions and wide fractional spreads before 1975, falling through decimalization (2001) and Reg NMS to near-modern costs after 2015. A 64-year backtest run at flat 1.5 bps/side materially overstates historical performance; the historical toggle shows the difference.
+
+Capacity controls keep the equity curve realistic:
+
+- `capital_capacity` caps deployable capital each night; excess equity sits in cash earning `cash_rate`. Without a cap the compounding curve is mathematically unbounded (and meaningless beyond market scale).
+- `max_adv_participation` caps each position's notional at a fraction of the symbol's 20-day median dollar volume, so the strategy cannot "trade" more than a realistic share of liquidity.
+
+Survivorship bias: by default the universe is today's S&P 500 constituents applied to historical prices, which overstates returns (delisted names are missing and members are treated as always included). To control this, provide point-in-time membership windows at `data/universe/sp500_membership.csv`:
+
+```csv
+symbol,start_date,end_date
+AAPL,1982-11-30,
+GE,1907-11-07,2018-06-26
+```
+
+When the file exists, the pipeline masks prices to each symbol's actual membership window. When it does not, both dashboards display an explicit survivorship-bias warning banner.
+
+## Benchmarks and walk-forward
+
+The Benchmarks dashboard tab (or `nightfall-alpha benchmarks`) compares the strategy against S&P 500, S&P 100, Nasdaq Composite, MSCI World (URTH ETF proxy), and an approximate 10-year Treasury total return derived from the ^TNX yield index. It reports CAGR, volatility, Sharpe, max drawdown for the benchmark plus correlation, beta, annualized alpha, tracking error, information ratio, and up/down capture versus the strategy, over common trading dates.
+
+The Walk-Forward tab (or `nightfall-alpha walkforward`) replaces the in-sample parameter choice with rolling out-of-sample evaluation: for each fold, the parameter grid (lookback, top-N, min-signal) is scored on a training window, frozen, and then measured on the following unseen test window. The stitched OOS equity curve and the in-sample vs out-of-sample Sharpe decay are the honest headline numbers for the strategy.
+
+```powershell
+.\.venv\Scripts\python.exe -m nightfall_alpha.cli walkforward --start-date 2015-01-01 --cost-model historical
+.\.venv\Scripts\python.exe -m nightfall_alpha.cli backtest --cost-model historical --capital-capacity 250000000 --max-adv-participation 0.05
+```
+
 ## Real data
 
-Install dependencies, then download real adjusted OHLCV data through `yfinance`:
+Download real adjusted OHLCV data through `yfinance` (a core dependency, no extra install needed):
 
 ```powershell
 $env:PYTHONPATH = "src"
-.\.venv\Scripts\python.exe -m pip install yfinance
 .\.venv\Scripts\python.exe -m nightfall_alpha.cli real-data --tickers "AAPL,MSFT,NVDA,JPM,XOM,PG,UNH" --start 2018-01-01
 ```
 
@@ -124,13 +163,13 @@ symbol,name,sector
 AAPL,Apple Inc.,Information Technology
 ```
 
-For prices, place normalized daily OHLCV data at:
+For prices, the primary local cache is the parquet file at:
 
 ```text
-data/processed/prices.csv
+data/processed/prices.parquet
 ```
 
-Required columns:
+A legacy CSV at `data/processed/prices.csv` is still read if present and is automatically migrated to parquet on first load. Required columns:
 
 ```csv
 date,symbol,open,high,low,close,volume
@@ -142,17 +181,17 @@ The backtester uses `open_t / close_{t-1} - 1` as the overnight return and forms
 
 ```text
 src/nightfall_alpha/
-  data/          data generation, validation, and pipeline orchestration
+  data/          data generation, validation, providers, membership, benchmarks, pipeline orchestration
   strategy/      overnight-effect features and signal construction
-  backtest/      event model, equity curve, trade blotter, metrics
+  backtest/      event model, era cost schedules, equity curve, trade blotter, metrics, walk-forward
   portfolio/     portfolio optimizers and risk estimators
   dashboard/     FastAPI app and static UI
   trading/       broker/execution interfaces for future paper/live trading
 tests/           unittest-based validation suite
 config/          default settings
-data/            local raw, processed, universe, and report outputs
+data/            local raw, processed (parquet price cache), universe, and report outputs
 ```
 
 ## Notes on trading readiness
 
-This is not live-trading-ready yet. The scaffold intentionally separates research returns from broker execution. Before paper or live trading, add survivorship-bias-free constituents, corporate-action-adjusted prices, exchange calendars, realistic order timing, borrow/short constraints if applicable, broker reconciliation, limits, kill switches, and post-trade audit logs.
+This is not live-trading-ready yet. The scaffold intentionally separates research returns from broker execution. The era-based cost model, capacity caps, point-in-time membership support, and walk-forward evaluation address the largest research-bias risks, but before paper or live trading you still need true survivorship-bias-free constituent data (the membership file is only as good as its source), corporate-action-adjusted prices, exchange calendars, realistic order timing, borrow/short constraints if applicable, broker reconciliation, limits, kill switches, and post-trade audit logs.

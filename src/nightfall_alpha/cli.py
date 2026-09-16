@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import typer
 import uvicorn
 
+from nightfall_alpha.backtest.engine import BacktestConfig
 from nightfall_alpha.config import load_settings
 from nightfall_alpha.data.pipeline import (
     artifact_paths,
     download_real_market_data,
     load_or_create_prices,
+    load_report_csv,
     run_research_pipeline,
 )
 from nightfall_alpha.portfolio.builder import PortfolioBuildSpec, build_custom_portfolio, parse_symbols
@@ -37,6 +40,10 @@ def backtest(
     data_source: str = typer.Option("existing", help="existing, synthetic, or yfinance."),
     start: str = typer.Option("2018-01-01", help="Start date when downloading/generating data."),
     end: str | None = typer.Option(None, help="Optional end date for real-data downloads."),
+    cost_model: str = typer.Option("flat", help="flat or historical era-based costs."),
+    capital_capacity: float | None = typer.Option(None, help="Max deployable dollars; excess sits in cash."),
+    cash_rate: float = typer.Option(0.0, help="Annualized return on undeployed cash."),
+    max_adv_participation: float | None = typer.Option(None, help="Cap each position at this fraction of ADV."),
 ) -> None:
     result = run_research_pipeline(
         force_sample_prices=force_sample_prices,
@@ -44,6 +51,10 @@ def backtest(
         data_source=data_source,
         start=start,
         end=end,
+        cost_model=cost_model,
+        capital_capacity=capital_capacity,
+        cash_rate=cash_rate,
+        max_adv_participation=max_adv_participation,
     )
     paths = result["artifacts"]
     metrics = result["metrics"]
@@ -51,7 +62,81 @@ def backtest(
     typer.echo(f"Trades: {len(result['backtest'].trades):,}")
     typer.echo(f"Final equity: ${metrics.get('final_equity', 0):,.2f}")
     typer.echo(f"Sharpe: {metrics.get('sharpe')}")
+    if metrics.get("survivorship", {}).get("warning"):
+        typer.echo(f"Warning: {metrics['survivorship']['warning']}")
     typer.echo(f"Reports written to {Path(paths.metrics_path).parent}")
+
+
+@app.command("walkforward")
+def walkforward(
+    train_days: int = typer.Option(756, min=60, help="Training window length in trading days."),
+    test_days: int = typer.Option(63, min=5, help="Out-of-sample test window length."),
+    step_days: int = typer.Option(63, min=5, help="Roll step between folds."),
+    start_date: str | None = typer.Option(None, help="Only keep folds whose test window ends after this date."),
+    max_folds: int | None = typer.Option(None, min=1, help="Keep only the most recent N folds."),
+    cost_model: str = typer.Option("flat", help="flat or historical era-based costs."),
+    selection_metric: str = typer.Option("sharpe", help="sharpe, sortino, calmar, or cagr."),
+) -> None:
+    from nightfall_alpha.backtest.walkforward import WalkForwardConfig, run_walk_forward
+
+    settings = load_settings()
+    prices = load_or_create_prices(settings)
+    result = run_walk_forward(
+        prices,
+        WalkForwardConfig(
+            train_days=train_days,
+            test_days=test_days,
+            step_days=step_days,
+            start_date=start_date,
+            max_folds=max_folds,
+            selection_metric=selection_metric,
+        ),
+        BacktestConfig(
+            initial_capital=settings.backtest.initial_capital,
+            fees_bps=settings.backtest.fees_bps,
+            slippage_bps=settings.backtest.slippage_bps,
+            cost_model=cost_model,
+        ),
+        risk_free_rate=settings.portfolio.risk_free_rate,
+        initial_capital=settings.backtest.initial_capital,
+    )
+    paths = artifact_paths(settings)
+    result.folds.to_csv(paths.walkforward_folds_path, index=False)
+    if not result.oos_daily.empty:
+        result.oos_daily.to_csv(paths.walkforward_daily_path, index=False)
+    typer.echo(f"Folds: {len(result.folds)}")
+    typer.echo(f"OOS Sharpe: {result.oos_metrics.get('sharpe')}")
+    typer.echo(f"OOS CAGR: {result.oos_metrics.get('cagr')}")
+    typer.echo(f"In-sample avg train Sharpe: {result.in_sample_average_sharpe}")
+    typer.echo(f"Walk-forward reports written to {paths.walkforward_folds_path.parent}")
+
+
+@app.command("benchmarks")
+def benchmarks(
+    keys: str = typer.Option("SP500,SP100,NASDAQ,MSCI_WORLD,UST10Y", help="Comma-separated benchmark keys."),
+    refresh: bool = typer.Option(False, help="Re-download benchmark data."),
+) -> None:
+    from nightfall_alpha.data.benchmarks import benchmark_comparison
+
+    settings = load_settings()
+    paths = artifact_paths(settings)
+    daily = load_report_csv(paths.daily_path)
+    if daily.empty:
+        typer.echo("No backtest daily report found. Run a backtest first.")
+        raise typer.Exit(code=1)
+    daily["exit_date"] = pd.to_datetime(daily["exit_date"])
+    strategy_returns = pd.Series(daily["net_return"].to_numpy(dtype=float), index=daily["exit_date"])
+    table, _ = benchmark_comparison(
+        strategy_returns,
+        settings.project.data_dir,
+        [key.strip().upper() for key in keys.split(",") if key.strip()],
+        refresh=refresh,
+        risk_free_rate=settings.portfolio.risk_free_rate,
+    )
+    if table.empty:
+        typer.echo("No benchmark comparison could be produced.")
+        raise typer.Exit(code=1)
+    typer.echo(table.to_string(index=False))
 
 
 @app.command("real-data")

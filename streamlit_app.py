@@ -8,13 +8,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from nightfall_alpha.backtest.engine import BacktestConfig
 from nightfall_alpha.backtest.metrics import compute_drawdown
+from nightfall_alpha.backtest.walkforward import WalkForwardConfig, run_walk_forward
 from nightfall_alpha.config import Settings, load_settings
 from nightfall_alpha.dashboard.app import (
     _filter_trades_frame,
@@ -22,6 +23,7 @@ from nightfall_alpha.dashboard.app import (
     _missing_symbols_from_prices,
     _trade_summary,
 )
+from nightfall_alpha.data.benchmarks import BENCHMARKS, benchmark_comparison
 from nightfall_alpha.data.pipeline import (
     artifact_paths,
     download_real_market_data,
@@ -33,7 +35,6 @@ from nightfall_alpha.data.schema import normalize_symbol
 from nightfall_alpha.data.universe_metadata import load_universe_metadata
 from nightfall_alpha.portfolio.builder import PortfolioBuildSpec, build_custom_portfolio, parse_symbols
 from nightfall_alpha.portfolio.optimizers import OptimizerSuiteSettings
-
 
 st.set_page_config(
     page_title="NightFall Alpha",
@@ -606,6 +607,17 @@ def project_path(path: Path) -> str:
         return Path(path).as_posix()
 
 
+def survivorship_banner(payload: dict[str, Any]) -> None:
+    survivorship = payload.get("survivorship") or {}
+    warning = survivorship.get("warning")
+    if not warning:
+        return
+    if survivorship.get("point_in_time"):
+        st.info(f"Point-in-time index membership is active. {warning}")
+    else:
+        st.warning(f"Survivorship bias warning: {warning}")
+
+
 def plot_curves(equity: pd.DataFrame) -> None:
     if equity.empty:
         st.info("Run a signal backtest to generate curves.")
@@ -773,6 +785,7 @@ def signal_page(cfg: Settings) -> None:
     if payload.get("latest_signal_date"):
         subtitle = f"Current book date {payload['latest_signal_date']} | {strategy.get('lookback_days', 63)}D signal lookback"
     page_heading("Signal Backtest", subtitle)
+    survivorship_banner(payload)
 
     with st.form("signal_backtest_form"):
         c1, c2, c3, c4 = st.columns(4)
@@ -819,6 +832,38 @@ def signal_page(cfg: Settings) -> None:
         price_start = c9.text_input("Price Start", value=str(data_window.get("requested_start") or ""))
         price_end = c10.text_input("Price End", value=str(data_window.get("requested_end") or ""))
         price_tickers = c11.text_input("Price Tickers", value="")
+        c12, c13, c14, c15 = st.columns(4)
+        cost_model = c12.selectbox(
+            "Cost Model",
+            ["flat", "historical"],
+            index=0 if (backtest.get("cost_model") or {}).get("mode", "flat") == "flat" else 1,
+            help="flat: the Fees/Slippage values above apply to every date. historical: era-based "
+            "commissions and spreads (wide in the 1960s-90s, narrow today).",
+        )
+        capital_capacity = c13.number_input(
+            "Capital Capacity ($)",
+            min_value=0.0,
+            value=float(backtest.get("capital_capacity") or 0.0),
+            step=10_000_000.0,
+            help="0 = unlimited. When set, only this much capital is deployed each night; excess equity sits in cash.",
+        )
+        cash_rate_pct = c14.number_input(
+            "Cash Rate (% p.a.)",
+            min_value=0.0,
+            max_value=50.0,
+            value=float(backtest.get("cash_rate") or 0.0) * 100.0,
+            step=0.25,
+            help="Annualized return earned on undeployed cash (only matters with a capital capacity).",
+        )
+        adv_participation_pct = c15.number_input(
+            "Max ADV Participation (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(backtest.get("max_adv_participation") or 0.0) * 100.0,
+            step=1.0,
+            help="0 = no liquidity constraint. When set, each position is capped at this share of the "
+            "symbol's 20-day median dollar volume.",
+        )
         submitted = st.form_submit_button("Run Signal Backtest")
 
     if submitted:
@@ -837,6 +882,10 @@ def signal_page(cfg: Settings) -> None:
                 initial_capital=float(initial_capital),
                 fees_bps=float(fees_bps),
                 slippage_bps=float(slippage_bps),
+                cost_model=cost_model,
+                capital_capacity=float(capital_capacity) if capital_capacity > 0 else None,
+                cash_rate=float(cash_rate_pct) / 100.0,
+                max_adv_participation=float(adv_participation_pct) / 100.0 if adv_participation_pct > 0 else None,
                 price_start=price_start.strip() or None,
                 price_end=price_end.strip() or None,
                 price_symbols=list(parse_symbols(price_tickers)) if price_tickers.strip() else None,
@@ -908,9 +957,9 @@ def universe_options(cfg: Settings) -> tuple[pd.DataFrame, dict[str, str]]:
 def portfolio_page(cfg: Settings) -> None:
     page_heading("Portfolio Research", "Build every optimizer at once from selected stocks or the entire local universe.")
     try:
-        universe, label_to_symbol = universe_options(cfg)
+        _, label_to_symbol = universe_options(cfg)
     except Exception:
-        universe, label_to_symbol = pd.DataFrame(), {}
+        label_to_symbol = {}
 
     with st.form("portfolio_form"):
         c1, c2, c3, c4 = st.columns(4)
@@ -1250,6 +1299,263 @@ def settings_page() -> None:
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def benchmark_page(cfg: Settings) -> None:
+    page_heading("Benchmarks", "Compare the signal strategy against index benchmarks over the same dates.")
+    payload = current_payload(cfg)
+    survivorship_banner(payload)
+    daily = payload.get("daily", pd.DataFrame())
+    if daily.empty:
+        st.info("Run a signal backtest first; benchmark comparison needs daily strategy returns.")
+        return
+
+    col1, col2 = st.columns([3, 1])
+    keys = col1.multiselect(
+        "Benchmarks",
+        options=list(BENCHMARKS.keys()),
+        default=["SP500", "NASDAQ"],
+        format_func=lambda key: f"{key} — {BENCHMARKS[key]['name']}",
+    )
+    refresh = col2.checkbox("Refresh data", value=False, help="Re-download benchmark history from Yahoo.")
+
+    if not keys:
+        st.info("Select at least one benchmark.")
+        return
+
+    daily = daily.copy()
+    daily["exit_date"] = pd.to_datetime(daily["exit_date"], errors="coerce")
+    strategy_returns = pd.Series(
+        pd.to_numeric(daily["net_return"], errors="coerce").to_numpy(dtype=float),
+        index=daily["exit_date"],
+    ).dropna()
+    strategy_returns = strategy_returns[~strategy_returns.index.duplicated(keep="last")]
+
+    try:
+        table, curves = benchmark_comparison(
+            strategy_returns,
+            cfg.project.data_dir,
+            keys,
+            refresh=refresh,
+            risk_free_rate=cfg.portfolio.risk_free_rate,
+        )
+    except Exception as exc:
+        st.error(f"Benchmark comparison failed: {exc}")
+        return
+
+    if table.empty:
+        st.info("No benchmark data available. Check the network connection or try Refresh data.")
+        return
+
+    st.markdown('<div class="nf-panel">', unsafe_allow_html=True)
+    st.markdown("### Relative Performance")
+    display_frame(
+        table,
+        columns=[
+            "key",
+            "benchmark",
+            "observations",
+            "strategy_cagr",
+            "benchmark_cagr",
+            "benchmark_volatility",
+            "benchmark_sharpe",
+            "benchmark_max_drawdown",
+            "correlation",
+            "beta",
+            "alpha_annualized",
+            "tracking_error",
+            "information_ratio",
+            "up_capture",
+            "down_capture",
+        ],
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if not curves.empty:
+        # Normalize every curve to 1.0 at the first common date for a fair comparison.
+        aligned = curves.dropna()
+        if not aligned.empty:
+            aligned = aligned / aligned.iloc[0]
+            fig = go.Figure()
+            palette = ["#22d3ee", "#a78bfa", "#f59e0b", "#34d399", "#fb7185", "#f472b6"]
+            for position, column in enumerate(aligned.columns):
+                fig.add_trace(
+                    go.Scatter(
+                        x=aligned.index,
+                        y=aligned[column],
+                        mode="lines",
+                        name=column,
+                        line={"color": palette[position % len(palette)], "width": 2.0},
+                    )
+                )
+            fig.update_layout(
+                title="Growth of $1 — Strategy vs Benchmarks (common dates)",
+                xaxis_title="Date",
+                yaxis_title="Growth of $1",
+                hovermode="x unified",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(255,255,255,0.02)",
+                font={"color": "#e9eef8"},
+                margin={"l": 50, "r": 24, "t": 55, "b": 45},
+            )
+            fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
+            fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
+            st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            "Benchmark data: Yahoo Finance daily closes (adjusted). UST10Y is an approximate 10-year "
+            "Treasury total return derived from the ^TNX yield index with a fixed modified duration of 8."
+        )
+
+
+def walkforward_page(cfg: Settings) -> None:
+    page_heading(
+        "Walk-Forward",
+        "Out-of-sample evaluation: parameters are re-fit on each training window, then frozen for the next test window.",
+    )
+    payload = current_payload(cfg)
+    survivorship_banner(payload)
+
+    with st.form("walkforward_form"):
+        c1, c2, c3, c4 = st.columns(4)
+        train_days = c1.number_input("Train Days", min_value=60, value=756, step=21)
+        test_days = c2.number_input("Test Days", min_value=5, value=63, step=21)
+        step_days = c3.number_input("Step Days", min_value=5, value=63, step=21)
+        max_folds = c4.number_input("Max Folds (0 = all)", min_value=0, value=0, step=1)
+        c5, c6, c7 = st.columns(3)
+        start_date = c5.text_input("Earliest Test End", value="2015-01-01")
+        selection_metric = c6.selectbox("Selection Metric", ["sharpe", "sortino", "calmar", "cagr"], index=0)
+        cost_model = c7.selectbox("Cost Model", ["flat", "historical"], index=0)
+        submitted = st.form_submit_button("Run Walk-Forward")
+
+    if submitted:
+        progress = st.progress(0, text="Running walk-forward folds...")
+        try:
+            prices = load_or_create_prices(cfg)
+            progress.progress(30, text="Evaluating parameter grid per fold...")
+            result = run_walk_forward(
+                prices,
+                WalkForwardConfig(
+                    train_days=int(train_days),
+                    test_days=int(test_days),
+                    step_days=int(step_days),
+                    start_date=start_date.strip() or None,
+                    max_folds=int(max_folds) or None,
+                    selection_metric=selection_metric,
+                ),
+                BacktestConfig(
+                    initial_capital=cfg.backtest.initial_capital,
+                    fees_bps=cfg.backtest.fees_bps,
+                    slippage_bps=cfg.backtest.slippage_bps,
+                    cost_model=cost_model,
+                ),
+                risk_free_rate=cfg.portfolio.risk_free_rate,
+                initial_capital=cfg.backtest.initial_capital,
+            )
+            paths = artifact_paths(cfg)
+            result.folds.to_csv(paths.walkforward_folds_path, index=False)
+            if not result.oos_daily.empty:
+                result.oos_daily.to_csv(paths.walkforward_daily_path, index=False)
+            st.session_state["walkforward_result"] = {
+                "folds": result.folds,
+                "oos_daily": result.oos_daily,
+                "oos_metrics": result.oos_metrics,
+                "in_sample_average_sharpe": result.in_sample_average_sharpe,
+            }
+            progress.progress(100, text="Walk-forward complete.")
+        except Exception as exc:
+            progress.empty()
+            st.error(f"Walk-forward failed: {exc}")
+            return
+
+    stored = st.session_state.get("walkforward_result")
+    if stored is None:
+        folds_path = artifact_paths(cfg).walkforward_folds_path
+        daily_path = artifact_paths(cfg).walkforward_daily_path
+        if folds_path.exists():
+            stored = {
+                "folds": pd.read_csv(folds_path),
+                "oos_daily": pd.read_csv(daily_path) if daily_path.exists() else pd.DataFrame(),
+                "oos_metrics": {},
+                "in_sample_average_sharpe": None,
+            }
+    if stored is None:
+        st.info("No walk-forward run yet. Configure the windows above and run one.")
+        return
+
+    folds = stored["folds"]
+    oos_daily = stored["oos_daily"]
+    oos_metrics = stored["oos_metrics"] or {}
+
+    st.markdown('<div class="nf-panel">', unsafe_allow_html=True)
+    st.markdown("### Out-of-Sample vs In-Sample")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("OOS Sharpe", number(oos_metrics.get("sharpe")))
+    c2.metric("OOS CAGR", pct(oos_metrics.get("cagr")))
+    c3.metric("OOS Max Drawdown", pct(oos_metrics.get("max_drawdown")))
+    in_sample = stored.get("in_sample_average_sharpe")
+    c4.metric("Avg In-Sample Train Sharpe", number(in_sample))
+    if in_sample is not None and oos_metrics.get("sharpe") is not None:
+        decay = 1.0 - float(oos_metrics["sharpe"]) / float(in_sample) if float(in_sample) != 0 else None
+        if decay is not None:
+            st.caption(
+                f"In-sample to out-of-sample Sharpe decay: {decay:.0%}. "
+                "Large positive decay indicates the static backtest overstates live performance."
+            )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if not oos_daily.empty:
+        st.markdown('<div class="nf-panel">', unsafe_allow_html=True)
+        curve = oos_daily.copy()
+        curve["date"] = pd.to_datetime(curve["exit_date"], errors="coerce")
+        curve = curve.dropna(subset=["date"]).sort_values("date")
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=curve["date"],
+                y=curve["ending_equity"],
+                mode="lines",
+                name="Stitched OOS Equity",
+                line={"color": "#34d399", "width": 2.2},
+                fill="tozeroy",
+                fillcolor="rgba(52, 211, 153, 0.10)",
+            )
+        )
+        fig.update_layout(
+            title="Stitched Out-of-Sample Equity (parameters re-fit each fold)",
+            xaxis_title="Date",
+            yaxis_title="Equity",
+            hovermode="x unified",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(255,255,255,0.02)",
+            font={"color": "#e9eef8"},
+            margin={"l": 50, "r": 24, "t": 55, "b": 45},
+        )
+        fig.update_yaxes(tickprefix="$", gridcolor="rgba(255,255,255,0.08)")
+        fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="nf-panel">', unsafe_allow_html=True)
+    st.markdown("### Fold Detail (chosen parameters per window)")
+    display_frame(
+        folds,
+        columns=[
+            "fold",
+            "train_start",
+            "train_end",
+            "test_start",
+            "test_end",
+            "lookback_days",
+            "top_n",
+            "min_signal",
+            "train_metric",
+            "oos_sharpe",
+            "oos_cagr",
+            "oos_max_drawdown",
+        ],
+    )
+    st.download_button("Download folds CSV", to_csv(folds), "nightfall_alpha_walkforward_folds.csv", "text/csv")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def sidebar_nav() -> str:
     st.sidebar.markdown(
         """
@@ -1265,7 +1571,7 @@ def sidebar_nav() -> str:
     )
     return st.sidebar.radio(
         "Dashboard sections",
-        ["Market Data", "Signal Backtest", "Portfolio Research", "Trade Blotter", "Framework", "Settings"],
+        ["Market Data", "Signal Backtest", "Benchmarks", "Walk-Forward", "Portfolio Research", "Trade Blotter", "Framework", "Settings"],
         index=1,
         label_visibility="collapsed",
     )
@@ -1280,6 +1586,10 @@ def main() -> None:
             market_data_page(cfg)
         elif selected == "Signal Backtest":
             signal_page(cfg)
+        elif selected == "Benchmarks":
+            benchmark_page(cfg)
+        elif selected == "Walk-Forward":
+            walkforward_page(cfg)
         elif selected == "Portfolio Research":
             portfolio_page(cfg)
         elif selected == "Trade Blotter":

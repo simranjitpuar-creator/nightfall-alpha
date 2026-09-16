@@ -19,7 +19,7 @@ jobs:
         run: pip install -e .
 
       - name: Ruff
-        run: pip install ruff && ruff check src tests
+        run: pip install ruff && ruff check src tests streamlit_app.py
 
       - name: Unit tests
         run: python -m unittest discover -s tests

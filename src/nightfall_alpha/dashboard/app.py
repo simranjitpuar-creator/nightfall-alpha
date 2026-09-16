@@ -9,8 +9,13 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from nightfall_alpha.backtest.engine import BacktestConfig
+from nightfall_alpha.backtest.walkforward import WalkForwardConfig, run_walk_forward
 from nightfall_alpha.config import Settings, load_settings
+from nightfall_alpha.data.benchmarks import BENCHMARKS, benchmark_comparison
+from nightfall_alpha.data.membership import SURVIVORSHIP_WARNING
 from nightfall_alpha.data.pipeline import (
+    artifact_paths,
     download_real_market_data,
     ensure_price_history_for_symbols,
     ensure_reports,
@@ -36,6 +41,21 @@ class SignalSettingsRequest(BaseModel):
     initial_capital: float = Field(default=1_000_000.0, gt=0.0)
     fees_bps: float = Field(default=0.5, ge=0.0)
     slippage_bps: float = Field(default=1.0, ge=0.0)
+    cost_model: str = Field(default="flat", pattern="^(flat|historical)$")
+    capital_capacity: float | None = Field(default=None, gt=0.0)
+    cash_rate: float = Field(default=0.0, ge=0.0, le=0.5)
+    max_adv_participation: float | None = Field(default=None, gt=0.0, le=1.0)
+
+
+class WalkForwardRequest(BaseModel):
+    train_days: int = Field(default=756, ge=60)
+    test_days: int = Field(default=63, ge=5)
+    step_days: int = Field(default=63, ge=5)
+    start_date: str | None = None
+    max_folds: int | None = Field(default=None, ge=1)
+    selection_metric: str = Field(default="sharpe", pattern="^(sharpe|sortino|calmar|cagr)$")
+    cost_model: str = Field(default="flat", pattern="^(flat|historical)$")
+    max_weight: float = Field(default=0.07, gt=0.0, le=1.0)
 
 
 class SignalBacktestRequest(SignalSettingsRequest):
@@ -298,7 +318,15 @@ def _load_payload(settings: Settings) -> dict[str, Any]:
         ),
         "fees_bps": float(backtest.get("fees_bps", settings.backtest.fees_bps)),
         "slippage_bps": float(backtest.get("slippage_bps", settings.backtest.slippage_bps)),
+        "cost_model": backtest.get("cost_model", {"mode": settings.backtest.cost_model}),
+        "capital_capacity": backtest.get("capital_capacity", settings.backtest.capital_capacity),
+        "cash_rate": backtest.get("cash_rate", settings.backtest.cash_rate),
+        "max_adv_participation": backtest.get("max_adv_participation", settings.backtest.max_adv_participation),
     }
+    survivorship = metrics.get("survivorship") if isinstance(metrics.get("survivorship"), dict) else None
+    if survivorship is None and metrics:
+        # Older metrics.json predates membership tracking; warn conservatively.
+        survivorship = {"point_in_time": False, "warning": SURVIVORSHIP_WARNING}
 
     return {
         "metrics": metrics,
@@ -312,6 +340,7 @@ def _load_payload(settings: Settings) -> dict[str, Any]:
         "strategy": strategy_context,
         "backtest": backtest_context,
         "data_window": data_window,
+        "survivorship": survivorship,
     }
 
 
@@ -355,6 +384,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "strategy": payload["strategy"],
             "backtest": payload["backtest"],
             "data_window": payload["data_window"],
+            "survivorship": payload["survivorship"],
         }
 
     @app.get("/api/equity")
@@ -429,11 +459,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "initial_capital",
                     "fees_bps",
                     "slippage_bps",
+                    "cost_model",
+                    "capital_capacity",
+                    "cash_rate",
+                    "max_adv_participation",
                 }
             ),
             initial_capital=request.initial_capital,
             fees_bps=request.fees_bps,
             slippage_bps=request.slippage_bps,
+            cost_model=request.cost_model,
+            capital_capacity=request.capital_capacity,
+            cash_rate=request.cash_rate,
+            max_adv_participation=request.max_adv_participation,
             price_start=request.price_start,
             price_end=request.price_end,
             price_symbols=price_symbols,
@@ -445,6 +483,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "final_equity": result["metrics"].get("final_equity"),
             "strategy": result["strategy"],
             "data_window": result["data_window"],
+            "cost_model": result["metrics"].get("backtest", {}).get("cost_model"),
+            "survivorship": result["metrics"].get("survivorship"),
         }
 
     @app.post("/api/data/download")
@@ -471,7 +511,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
             if request.run_backtest:
                 strategy_overrides = request.strategy.model_dump(
-                    exclude={"initial_capital", "fees_bps", "slippage_bps"}
+                    exclude={
+                        "initial_capital",
+                        "fees_bps",
+                        "slippage_bps",
+                        "cost_model",
+                        "capital_capacity",
+                        "cash_rate",
+                        "max_adv_participation",
+                    }
                 ) if request.strategy else None
                 pipeline = run_research_pipeline(
                     cfg,
@@ -479,6 +527,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     initial_capital=request.strategy.initial_capital if request.strategy else None,
                     fees_bps=request.strategy.fees_bps if request.strategy else None,
                     slippage_bps=request.strategy.slippage_bps if request.strategy else None,
+                    cost_model=request.strategy.cost_model if request.strategy else None,
+                    capital_capacity=request.strategy.capital_capacity if request.strategy else None,
+                    cash_rate=request.strategy.cash_rate if request.strategy else None,
+                    max_adv_participation=request.strategy.max_adv_participation if request.strategy else None,
                     price_start=request.start,
                     price_end=request.end,
                     price_symbols=result.returned_symbols,
@@ -589,6 +641,97 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "weights": _records(result["weights"]),
                 "selected_summary": _records(result["selected_summary"]),
                 "selected_weights": _records(result["selected_weights"]),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/benchmarks")
+    def benchmark_endpoint(keys: str = "SP500,SP100,NASDAQ", refresh: bool = False) -> dict[str, Any]:
+        try:
+            payload = _load_payload(cfg)
+            daily = payload["daily"]
+            if daily.empty:
+                raise HTTPException(status_code=400, detail="Run a backtest first; no daily returns exist yet.")
+            daily = daily.copy()
+            daily["exit_date"] = pd.to_datetime(daily["exit_date"], errors="coerce")
+            strategy_returns = pd.Series(
+                pd.to_numeric(daily["net_return"], errors="coerce").to_numpy(dtype=float),
+                index=daily["exit_date"],
+            ).dropna()
+            requested = [key.strip().upper() for key in keys.split(",") if key.strip()]
+            unknown = [key for key in requested if key not in BENCHMARKS]
+            requested = [key for key in requested if key in BENCHMARKS]
+            table, curves = benchmark_comparison(
+                strategy_returns,
+                cfg.project.data_dir,
+                requested,
+                refresh=refresh,
+                risk_free_rate=cfg.portfolio.risk_free_rate,
+            )
+            curve_records: list[dict[str, Any]] = []
+            if not curves.empty:
+                curve_frame = curves.copy()
+                curve_frame.insert(0, "date", curve_frame.index.strftime("%Y-%m-%d"))
+                curve_records = _records(curve_frame.reset_index(drop=True))
+            return {
+                "status": "ok",
+                "summary": _records(table),
+                "curves": curve_records,
+                "available": sorted(BENCHMARKS),
+                "unknown_keys": unknown,
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/walkforward")
+    def walkforward_endpoint(request: WalkForwardRequest) -> dict[str, Any]:
+        try:
+            prices = cached_prices()
+            result = run_walk_forward(
+                prices,
+                WalkForwardConfig(
+                    train_days=request.train_days,
+                    test_days=request.test_days,
+                    step_days=request.step_days,
+                    start_date=request.start_date,
+                    max_folds=request.max_folds,
+                    selection_metric=request.selection_metric,
+                    base_max_weight=request.max_weight,
+                ),
+                BacktestConfig(
+                    initial_capital=cfg.backtest.initial_capital,
+                    fees_bps=cfg.backtest.fees_bps,
+                    slippage_bps=cfg.backtest.slippage_bps,
+                    cost_model=request.cost_model,
+                ),
+                risk_free_rate=cfg.portfolio.risk_free_rate,
+                initial_capital=cfg.backtest.initial_capital,
+            )
+            paths = artifact_paths(cfg)
+            result.folds.to_csv(paths.walkforward_folds_path, index=False)
+            if not result.oos_daily.empty:
+                result.oos_daily.to_csv(paths.walkforward_daily_path, index=False)
+            oos_curve: list[dict[str, Any]] = []
+            if not result.oos_daily.empty:
+                curve = result.oos_daily[["exit_date", "ending_equity"]].rename(
+                    columns={"exit_date": "date", "ending_equity": "equity"}
+                )
+                oos_curve = _records(curve)
+            return {
+                "status": "ok",
+                "folds": _records(result.folds),
+                "oos_metrics": result.oos_metrics,
+                "oos_curve": oos_curve,
+                "in_sample_average_sharpe": result.in_sample_average_sharpe,
+                "config": {
+                    "train_days": request.train_days,
+                    "test_days": request.test_days,
+                    "step_days": request.step_days,
+                    "selection_metric": request.selection_metric,
+                    "cost_model": request.cost_model,
+                },
             }
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

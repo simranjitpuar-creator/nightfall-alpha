@@ -34,6 +34,10 @@ def build_overnight_features(prices: pd.DataFrame, lookback_days: int = 63, min_
         rolling = symbol_frame["overnight_return"].rolling(lookback_days, min_periods=min_history)
         symbol_frame["overnight_mean"] = rolling.mean()
         symbol_frame["overnight_vol"] = rolling.std(ddof=0)
+        symbol_frame["dollar_volume"] = symbol_frame["close"] * symbol_frame["volume"]
+        symbol_frame["adv_dollars"] = (
+            symbol_frame["dollar_volume"].rolling(20, min_periods=5).median()
+        )
         symbol_frame["overnight_sharpe"] = np.where(
             symbol_frame["overnight_vol"] > 0,
             symbol_frame["overnight_mean"] / symbol_frame["overnight_vol"] * np.sqrt(252.0),
@@ -84,11 +88,26 @@ def _project_capped_simplex(values: np.ndarray, max_weight: float) -> np.ndarray
     return np.clip(weights, 0.0, cap)
 
 
-def generate_signals(prices: pd.DataFrame, config: OvernightEffectConfig | None = None) -> pd.DataFrame:
+SIGNAL_OUTPUT_COLUMNS = [
+    "signal_date",
+    "exit_date",
+    "symbol",
+    "weight",
+    "overnight_sharpe",
+    "overnight_mean",
+    "overnight_vol",
+    "overnight_win_rate",
+    "adv_dollars",
+    "next_overnight_return",
+    "signal_rank",
+]
+
+
+def signals_from_features(features: pd.DataFrame, config: OvernightEffectConfig | None = None) -> pd.DataFrame:
+    """Select and weight positions from a pre-computed feature frame."""
     cfg = config or OvernightEffectConfig()
-    features = build_overnight_features(prices, cfg.lookback_days, cfg.min_history)
     if features.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=SIGNAL_OUTPUT_COLUMNS)
 
     candidates = features.dropna(subset=["overnight_sharpe", "next_overnight_return", "exit_date"]).copy()
     candidates = candidates[candidates["overnight_sharpe"] >= cfg.min_signal]
@@ -109,38 +128,16 @@ def generate_signals(prices: pd.DataFrame, config: OvernightEffectConfig | None 
         selected["weight"] = _project_capped_simplex(raw_scores, cfg.max_weight)
         selected["signal_rank"] = np.arange(1, len(selected) + 1)
         selected["signal_date"] = date
-        rows.append(
-            selected[
-                [
-                    "signal_date",
-                    "exit_date",
-                    "symbol",
-                    "weight",
-                    "overnight_sharpe",
-                    "overnight_mean",
-                    "overnight_vol",
-                    "overnight_win_rate",
-                    "next_overnight_return",
-                    "signal_rank",
-                ]
-            ]
-        )
+        rows.append(selected[SIGNAL_OUTPUT_COLUMNS])
 
     if not rows:
-        return pd.DataFrame(
-            columns=[
-                "signal_date",
-                "exit_date",
-                "symbol",
-                "weight",
-                "overnight_sharpe",
-                "overnight_mean",
-                "overnight_vol",
-                "overnight_win_rate",
-                "next_overnight_return",
-                "signal_rank",
-            ]
-        )
+        return pd.DataFrame(columns=SIGNAL_OUTPUT_COLUMNS)
 
     signals = pd.concat(rows, ignore_index=True)
     return signals.sort_values(["signal_date", "signal_rank"]).reset_index(drop=True)
+
+
+def generate_signals(prices: pd.DataFrame, config: OvernightEffectConfig | None = None) -> pd.DataFrame:
+    cfg = config or OvernightEffectConfig()
+    features = build_overnight_features(prices, cfg.lookback_days, cfg.min_history)
+    return signals_from_features(features, cfg)

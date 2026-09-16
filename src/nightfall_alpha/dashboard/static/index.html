@@ -69,6 +69,18 @@
             </span>
             <span class="nav-label">Signal Backtest</span>
           </button>
+          <button class="nav-item" type="button" data-tab="benchmarks">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
+            </span>
+            <span class="nav-label">Benchmarks</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="walkforward">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+            </span>
+            <span class="nav-label">Walk-Forward</span>
+          </button>
           <button class="nav-item" type="button" data-tab="portfolio">
             <span class="nav-ico" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9l7 4"/><circle cx="12" cy="12" r="9"/></svg>
@@ -229,9 +241,30 @@
                   <span>Price Tickers</span>
                   <input id="signalPriceTickers" name="priceTickers" type="text" placeholder="Blank uses all cached symbols" />
                 </label>
+                <label>
+                  <span>Cost Model</span>
+                  <select id="signalCostModel" name="costModel">
+                    <option value="flat" selected>flat (fees + slippage above)</option>
+                    <option value="historical">historical (era-based)</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Capital Capacity ($)</span>
+                  <input id="signalCapitalCapacity" name="capitalCapacity" type="number" min="0" step="10000000" value="0" />
+                </label>
+                <label>
+                  <span>Cash Rate (% p.a.)</span>
+                  <input id="signalCashRate" name="cashRate" type="number" min="0" max="50" step="0.25" value="0" />
+                </label>
+                <label>
+                  <span>Max ADV Participation (%)</span>
+                  <input id="signalAdvParticipation" name="advParticipation" type="number" min="0" max="100" step="1" value="0" />
+                </label>
                 <button id="runButton" class="primary-btn submit" type="submit">Run Signal Backtest</button>
               </form>
             </section>
+
+            <div id="survivorshipBanner" class="survivorship-banner" hidden></div>
 
             <section class="summary-block reveal" aria-label="Signal backtest summary">
               <div class="section-heading">
@@ -296,6 +329,147 @@
                     </tr>
                   </thead>
                   <tbody id="holdingsBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <!-- ===================== BENCHMARKS ===================== -->
+          <section class="tab-panel" data-tab-panel="benchmarks">
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Benchmark Comparison</h2>
+                <span id="benchmarkStatus" class="subtle"></span>
+              </div>
+              <form id="benchmarkForm" class="form-grid">
+                <fieldset class="span-2 benchmark-choices">
+                  <span>Benchmarks</span>
+                  <label><input type="checkbox" name="benchKey" value="SP500" checked /> S&P 500</label>
+                  <label><input type="checkbox" name="benchKey" value="SP100" /> S&P 100</label>
+                  <label><input type="checkbox" name="benchKey" value="NASDAQ" checked /> Nasdaq Composite</label>
+                  <label><input type="checkbox" name="benchKey" value="MSCI_WORLD" /> MSCI World (URTH proxy)</label>
+                  <label><input type="checkbox" name="benchKey" value="UST10Y" /> US 10Y Treasury (approx.)</label>
+                </fieldset>
+                <label>
+                  <span>Refresh data</span>
+                  <select id="benchmarkRefresh" name="benchmarkRefresh">
+                    <option value="false" selected>Use cache</option>
+                    <option value="true">Re-download from Yahoo</option>
+                  </select>
+                </label>
+                <button id="benchmarkButton" class="primary-btn submit" type="submit">Compare</button>
+              </form>
+            </section>
+
+            <section class="panel curve-panel reveal">
+              <div class="panel-header">
+                <h2>Growth of $1 vs Benchmarks</h2>
+                <span class="subtle">common trading dates only</span>
+              </div>
+              <div class="curve-window">
+                <canvas id="benchmarkChart" height="320" aria-label="Strategy vs benchmark growth"></canvas>
+              </div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Relative Performance</h2>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Benchmark</th><th>Obs</th><th>Strat CAGR</th><th>Bench CAGR</th><th>Bench Sharpe</th>
+                      <th>Bench Max DD</th><th>Corr</th><th>Beta</th><th>Alpha (ann.)</th><th>Info Ratio</th>
+                      <th>Up Capture</th><th>Down Capture</th>
+                    </tr>
+                  </thead>
+                  <tbody id="benchmarkBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <!-- ===================== WALK-FORWARD ===================== -->
+          <section class="tab-panel" data-tab-panel="walkforward">
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Walk-Forward Out-of-Sample Evaluation</h2>
+                <span id="walkforwardStatus" class="subtle"></span>
+              </div>
+              <form id="walkforwardForm" class="form-grid">
+                <label>
+                  <span>Train Days</span>
+                  <input id="wfTrainDays" type="number" min="60" step="21" value="756" />
+                </label>
+                <label>
+                  <span>Test Days</span>
+                  <input id="wfTestDays" type="number" min="5" step="21" value="63" />
+                </label>
+                <label>
+                  <span>Step Days</span>
+                  <input id="wfStepDays" type="number" min="5" step="21" value="63" />
+                </label>
+                <label>
+                  <span>Max Folds (0 = all)</span>
+                  <input id="wfMaxFolds" type="number" min="0" step="1" value="0" />
+                </label>
+                <label>
+                  <span>Earliest Test End</span>
+                  <input id="wfStartDate" type="date" value="2015-01-01" />
+                </label>
+                <label>
+                  <span>Selection Metric</span>
+                  <select id="wfMetric">
+                    <option value="sharpe" selected>sharpe</option>
+                    <option value="sortino">sortino</option>
+                    <option value="calmar">calmar</option>
+                    <option value="cagr">cagr</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Cost Model</span>
+                  <select id="wfCostModel">
+                    <option value="flat" selected>flat</option>
+                    <option value="historical">historical</option>
+                  </select>
+                </label>
+                <button id="walkforwardButton" class="primary-btn submit" type="submit">Run Walk-Forward</button>
+              </form>
+            </section>
+
+            <section class="summary-block reveal" aria-label="Walk-forward summary">
+              <div class="section-heading">
+                <h2>Out-of-Sample vs In-Sample</h2>
+                <span id="walkforwardMeta" class="subtle"></span>
+              </div>
+              <div id="walkforwardGrid" class="metric-grid"></div>
+            </section>
+
+            <section class="panel curve-panel reveal">
+              <div class="panel-header">
+                <h2>Stitched Out-of-Sample Equity</h2>
+                <span class="subtle">parameters re-fit on each training window</span>
+              </div>
+              <div class="curve-window">
+                <canvas id="walkforwardChart" height="320" aria-label="Out-of-sample equity curve"></canvas>
+              </div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Fold Detail</h2>
+                <span class="subtle">parameters chosen on the training window</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fold</th><th>Train</th><th>Test</th><th>Lookback</th><th>Top N</th>
+                      <th>Train Score</th><th>OOS Sharpe</th><th>OOS CAGR</th><th>OOS Max DD</th>
+                    </tr>
+                  </thead>
+                  <tbody id="walkforwardBody"></tbody>
                 </table>
               </div>
             </section>

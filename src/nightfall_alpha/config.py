@@ -48,6 +48,10 @@ class BacktestSettings:
     initial_capital: float = 1_000_000.0
     fees_bps: float = 0.5
     slippage_bps: float = 1.0
+    cost_model: str = "flat"  # "flat" | "historical"
+    capital_capacity: float | None = None  # max deployable dollars; excess sits in cash
+    cash_rate: float = 0.0  # annualized return on undeployed cash
+    max_adv_participation: float | None = None  # cap each position at this fraction of ADV
 
 
 @dataclass(frozen=True)
@@ -122,6 +126,18 @@ def load_settings(path: str | Path | None = None) -> Settings:
             initial_capital=float(env_value("INITIAL_CAPITAL") or backtest.get("initial_capital", BacktestSettings.initial_capital)),
             fees_bps=float(env_value("FEES_BPS") or backtest.get("fees_bps", BacktestSettings.fees_bps)),
             slippage_bps=float(env_value("SLIPPAGE_BPS") or backtest.get("slippage_bps", BacktestSettings.slippage_bps)),
+            cost_model=str(env_value("COST_MODEL") or backtest.get("cost_model", BacktestSettings.cost_model)),
+            capital_capacity=(
+                float(env_value("CAPITAL_CAPACITY") or backtest.get("capital_capacity"))
+                if (env_value("CAPITAL_CAPACITY") or backtest.get("capital_capacity"))
+                else None
+            ),
+            cash_rate=float(env_value("CASH_RATE") or backtest.get("cash_rate", BacktestSettings.cash_rate)),
+            max_adv_participation=(
+                float(env_value("MAX_ADV_PARTICIPATION") or backtest.get("max_adv_participation"))
+                if (env_value("MAX_ADV_PARTICIPATION") or backtest.get("max_adv_participation"))
+                else None
+            ),
         ),
         strategy=StrategySettings(
             lookback_days=int(strategy.get("lookback_days", StrategySettings.lookback_days)),
