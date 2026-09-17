@@ -72,6 +72,7 @@ class MarketDataRequest(BaseModel):
     end: str | None = None
     symbols_limit: int | None = Field(default=None, ge=1, le=505)
     run_backtest: bool = True
+    incremental: bool = True
     strategy: SignalSettingsRequest | None = None
 
 
@@ -100,6 +101,7 @@ class PortfolioBuilderRequest(BaseModel):
     lookback_days: int | None = Field(default=756, ge=20)
     auto_download_missing: bool = True
     refresh_history: bool = False
+    incremental: bool = True
     data_start: str = "2018-01-01"
     data_source: str = "yahoo"
 
@@ -254,8 +256,37 @@ def _csv_response(frame: pd.DataFrame, filename: str) -> Response:
     )
 
 
+# Report payloads are expensive to assemble (several large CSVs per API call),
+# so cache them keyed on the report files' mtimes. Any pipeline rerun rewrites
+# the reports and invalidates the cache automatically.
+_PAYLOAD_CACHE: dict[str, Any] = {"signature": None, "payload": None}
+
+
+def _report_signature(paths: Any) -> tuple[int | None, ...]:
+    report_files = (
+        paths.metrics_path,
+        paths.daily_path,
+        paths.equity_path,
+        paths.trades_path,
+        paths.portfolio_summary_path,
+        paths.portfolio_weights_path,
+        paths.signals_path,
+    )
+    return tuple(path.stat().st_mtime_ns if path.exists() else None for path in report_files)
+
+
 def _load_payload(settings: Settings) -> dict[str, Any]:
     paths = ensure_reports(settings)
+    signature = _report_signature(paths)
+    if _PAYLOAD_CACHE["payload"] is not None and _PAYLOAD_CACHE["signature"] == signature:
+        return _PAYLOAD_CACHE["payload"]
+    payload = _build_payload(settings, paths)
+    _PAYLOAD_CACHE["signature"] = signature
+    _PAYLOAD_CACHE["payload"] = payload
+    return payload
+
+
+def _build_payload(settings: Settings, paths: Any) -> dict[str, Any]:
     metrics = load_metrics(paths.metrics_path)
     daily = load_report_csv(paths.daily_path)
     equity = load_report_csv(paths.equity_path)
@@ -500,6 +531,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 refresh_universe=symbols is None,
                 merge_existing=True,
                 source=request.source,
+                incremental=request.incremental,
             )
             remember_prices(result.prices)
             payload: dict[str, Any] = {
@@ -561,6 +593,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     start=request.data_start,
                     source=request.data_source,
                     refresh_existing=refresh_history,
+                    incremental=request.incremental,
                 )
                 remember_prices(prices)
             else:

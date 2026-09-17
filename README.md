@@ -129,6 +129,23 @@ $env:PYTHONPATH = "src"
 .\.venv\Scripts\python.exe -m nightfall_alpha.cli real-data --source stooq --tickers "AAPL,MSFT,JPM" --start 1990-01-01
 ```
 
+### Tiingo (free API key)
+
+Tiingo offers an official free end-of-day API: 500 requests/day, full history per symbol, adjusted prices. Sign up at https://www.tiingo.com, copy the key from Account → API, then set it in `.env` or the environment:
+
+```powershell
+TIINGO_API_KEY=your_key_here
+.\.venv\Scripts\python.exe -m nightfall_alpha.cli real-data --source tiingo --tickers "AAPL,MSFT,JPM" --start 2015-01-01
+```
+
+### Incremental refreshes
+
+Daily top-ups no longer need a full history re-download. Pass `--incremental` (CLI) or enable "Incremental (new bars only)" (dashboards) to fetch only bars after each symbol's last cached date, with a 10-day overlap that is deduplicated on merge:
+
+```powershell
+.\.venv\Scripts\python.exe -m nightfall_alpha.cli real-data --source tiingo --incremental
+```
+
 ## Portfolio builder
 
 Build a custom portfolio from selected tickers:

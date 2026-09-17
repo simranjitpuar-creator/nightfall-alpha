@@ -15,10 +15,17 @@ from nightfall_alpha.data.membership import apply_membership, load_membership, m
 from nightfall_alpha.data.schema import NUMERIC_PRICE_COLUMNS, PRICE_COLUMNS, normalize_symbol, validate_prices_frame
 from nightfall_alpha.data.stooq_provider import StooqDownloadResult, download_stooq_daily_prices
 from nightfall_alpha.data.synthetic import SyntheticMarketConfig, generate_synthetic_ohlcv
+from nightfall_alpha.data.tiingo_provider import TiingoDownloadResult, download_tiingo_daily_prices
 from nightfall_alpha.data.yahoo_provider import YahooDownloadResult, download_daily_prices, fetch_sp500_constituents
 from nightfall_alpha.portfolio.optimizers import OptimizerSuiteSettings, build_portfolio_suite
 from nightfall_alpha.portfolio.risk import overnight_return_matrix, prepare_optimization_matrix
 from nightfall_alpha.strategy.overnight import OvernightEffectConfig, generate_signals
+
+DownloadResult = YahooDownloadResult | StooqDownloadResult | TiingoDownloadResult
+
+# Calendar-day overlap when topping up cached history; dedup on (date, symbol)
+# makes the overlap harmless and it covers holidays/weekends around the last bar.
+INCREMENTAL_OVERLAP_DAYS = 10
 
 
 @dataclass(frozen=True)
@@ -153,6 +160,76 @@ def load_or_create_prices(
     return prices
 
 
+def _download_from_source(symbols: list[str], source: str, start: str, end: str | None) -> DownloadResult:
+    if source == "stooq":
+        return download_stooq_daily_prices(symbols, start=start, end=end)
+    if source == "tiingo":
+        return download_tiingo_daily_prices(symbols, start=start, end=end)
+    if source == "yahoo_max":
+        return download_daily_prices(symbols, start="1900-01-01", end=end)
+    return download_daily_prices(symbols, start=start, end=end)
+
+
+def _download_with_optional_incremental(
+    source: str,
+    symbols: list[str],
+    start: str,
+    end: str | None,
+    existing: pd.DataFrame,
+    incremental: bool,
+) -> DownloadResult:
+    """Download symbols, topping up cached symbols from their last cached bar.
+
+    Fresh symbols always get the full requested start date. Cached symbols only
+    re-fetch a short overlapping window, which turns daily refreshes from a full
+    history re-download into a few bars per symbol.
+    """
+    if not incremental or existing.empty:
+        return _download_from_source(symbols, source, start, end)
+
+    last_dates = existing.groupby("symbol")["date"].max()
+    fresh = [symbol for symbol in symbols if symbol not in last_dates.index]
+    cached = [symbol for symbol in symbols if symbol in last_dates.index]
+
+    results: list[DownloadResult] = []
+    errors: list[Exception] = []
+    if fresh:
+        try:
+            results.append(_download_from_source(fresh, source, start, end))
+        except Exception as exc:  # provider may return nothing for the fresh batch
+            errors.append(exc)
+    if cached:
+        earliest = min(last_dates[symbol] for symbol in cached) - pd.Timedelta(days=INCREMENTAL_OVERLAP_DAYS)
+        cached_start = max(pd.Timestamp(start), earliest).strftime("%Y-%m-%d")
+        try:
+            results.append(_download_from_source(cached, source, cached_start, end))
+        except Exception as exc:
+            errors.append(exc)
+
+    if not results:
+        raise errors[0]
+    if len(results) == 1:
+        only = results[0]
+        returned = set(only.returned_symbols)
+        return replace(
+            only,
+            requested_symbols=list(symbols),
+            missing_symbols=[symbol for symbol in symbols if symbol not in returned],
+        )
+
+    prices = pd.concat([result.prices for result in results], ignore_index=True)
+    returned = sorted({symbol for result in results for symbol in result.returned_symbols})
+    first = results[0]
+    return type(first)(
+        prices=prices,
+        requested_symbols=list(symbols),
+        returned_symbols=returned,
+        missing_symbols=[symbol for symbol in symbols if symbol not in set(returned)],
+        start=start,
+        end=end,
+    )
+
+
 def download_real_market_data(
     settings: Settings | None = None,
     symbols: list[str] | None = None,
@@ -162,7 +239,8 @@ def download_real_market_data(
     refresh_universe: bool = True,
     merge_existing: bool = False,
     source: str = "yahoo",
-) -> YahooDownloadResult | StooqDownloadResult:
+    incremental: bool = False,
+) -> DownloadResult:
     cfg = settings or load_settings()
 
     if symbols:
@@ -187,15 +265,14 @@ def download_real_market_data(
     if symbols_limit:
         requested_symbols = requested_symbols[:symbols_limit]
 
-    if source == "stooq":
-        result = download_stooq_daily_prices(requested_symbols, start=start, end=end)
-    elif source == "yahoo_max":
-        result = download_daily_prices(requested_symbols, start="1900-01-01", end=end)
-    else:
-        result = download_daily_prices(requested_symbols, start=start, end=end)
+    existing = pd.DataFrame()
+    if (merge_existing or incremental) and price_cache_exists(cfg):
+        existing = load_price_cache_for_settings(cfg)
+
+    result = _download_with_optional_incremental(source, requested_symbols, start, end, existing, incremental)
     prices = result.prices
-    if merge_existing and price_cache_exists(cfg):
-        prices = merge_price_history(load_price_cache_for_settings(cfg), result.prices)
+    if not existing.empty:
+        prices = merge_price_history(existing, result.prices)
     save_price_cache(cfg, prices)
     return replace(result, prices=prices)
 
@@ -240,6 +317,7 @@ def ensure_price_history_for_symbols(
     end: str | None = None,
     source: str = "yahoo",
     refresh_existing: bool = False,
+    incremental: bool = False,
 ) -> tuple[pd.DataFrame, list[str], list[str]]:
     cfg = settings or load_settings()
     requested = list(dict.fromkeys(normalize_symbol(symbol) for symbol in symbols if str(symbol).strip()))
@@ -251,12 +329,7 @@ def ensure_price_history_for_symbols(
     downloaded: list[str] = []
 
     if to_download:
-        if source == "stooq":
-            result = download_stooq_daily_prices(to_download, start=start, end=end)
-        elif source == "yahoo_max":
-            result = download_daily_prices(to_download, start="1900-01-01", end=end)
-        else:
-            result = download_daily_prices(to_download, start=start, end=end)
+        result = _download_with_optional_incremental(source, to_download, start, end, existing, incremental)
         downloaded = result.returned_symbols
         existing = merge_price_history(existing, result.prices)
         save_price_cache(cfg, existing)

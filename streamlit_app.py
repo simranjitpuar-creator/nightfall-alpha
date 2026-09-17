@@ -689,8 +689,8 @@ def market_data_page(cfg: Settings) -> None:
         col1, col2, col3, col4 = st.columns(4)
         source_label = col1.selectbox(
             "Source",
-            ["Yahoo Finance", "Yahoo Max History", "Stooq Long History"],
-            help="Selects the provider used to refresh the local daily OHLCV cache. Longer history can change signals, optimizer inputs, covariance, VaR, CVaR, and drawdowns.",
+            ["Yahoo Finance", "Yahoo Max History", "Stooq Long History", "Tiingo (free API key)"],
+            help="Selects the provider used to refresh the local daily OHLCV cache. Longer history can change signals, optimizer inputs, covariance, VaR, CVaR, and drawdowns. Tiingo needs TIINGO_API_KEY in the environment or .env.",
         )
         tickers = col2.text_input(
             "Tickers",
@@ -716,6 +716,11 @@ def market_data_page(cfg: Settings) -> None:
             value=True,
             help="When enabled, the refreshed price window is passed into the signal engine so metrics, curves, candidates, and blotter update together.",
         )
+        incremental = col3.checkbox(
+            "Incremental (new bars only)",
+            value=True,
+            help="Only fetch bars after each symbol's last cached date. Much faster for daily refreshes; disable to force a full re-download.",
+        )
 
         with st.expander("Signal settings used if Run backtest is enabled", expanded=False):
             s1, s2, s3, s4 = st.columns(4)
@@ -734,7 +739,7 @@ def market_data_page(cfg: Settings) -> None:
     if not submitted:
         return
 
-    source = {"Yahoo Finance": "yahoo", "Yahoo Max History": "yahoo_max", "Stooq Long History": "stooq"}[source_label]
+    source = {"Yahoo Finance": "yahoo", "Yahoo Max History": "yahoo_max", "Stooq Long History": "stooq", "Tiingo (free API key)": "tiingo"}[source_label]
     progress = st.progress(0, text="Preparing market data request...")
     try:
         symbols = list(parse_symbols(tickers)) if tickers.strip() else None
@@ -748,6 +753,7 @@ def market_data_page(cfg: Settings) -> None:
             refresh_universe=symbols is None,
             merge_existing=True,
             source=source,
+            incremental=incremental,
         )
         progress.progress(70, text="Merging and validating price cache...")
         if run_after:
@@ -970,9 +976,9 @@ def portfolio_page(cfg: Settings) -> None:
         )
         data_source = c2.selectbox(
             "Missing Data",
-            ["Yahoo Finance", "Yahoo Max History", "Stooq Long History"],
+            ["Yahoo Finance", "Yahoo Max History", "Stooq Long History", "Tiingo (free API key)"],
             index=1,
-            help="Provider used when selected symbols are missing or Refresh History is enabled.",
+            help="Provider used when selected symbols are missing or Refresh History is enabled. Tiingo needs TIINGO_API_KEY in the environment or .env.",
         )
         return_model = c3.selectbox(
             "Return Model",
@@ -1025,7 +1031,7 @@ def portfolio_page(cfg: Settings) -> None:
         submitted = st.form_submit_button("Build Portfolio")
 
     if submitted:
-        source = {"Yahoo Finance": "yahoo", "Yahoo Max History": "yahoo_max", "Stooq Long History": "stooq"}[data_source]
+        source = {"Yahoo Finance": "yahoo", "Yahoo Max History": "yahoo_max", "Stooq Long History": "stooq", "Tiingo (free API key)": "tiingo"}[data_source]
         return_model_key = "close_to_close" if return_model == "Close to Close" else "overnight"
         rebalance_key = {"Static Weights": "none", "Monthly": "monthly", "Quarterly": "quarterly", "Annually": "annually"}[rebalance]
         progress = st.progress(0, text="Loading price cache...")

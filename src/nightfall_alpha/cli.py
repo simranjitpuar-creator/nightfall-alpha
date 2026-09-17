@@ -142,10 +142,11 @@ def benchmarks(
 @app.command("real-data")
 def real_data(
     tickers: str | None = typer.Option(None, help="Comma/space-separated tickers. Omit for S&P 500."),
-    source: str = typer.Option("yahoo", help="yahoo, yahoo_max, or stooq."),
+    source: str = typer.Option("yahoo", help="yahoo, yahoo_max, stooq, or tiingo (needs TIINGO_API_KEY)."),
     start: str = typer.Option("2015-01-01", help="Download start date."),
     end: str | None = typer.Option(None, help="Optional download end date."),
     symbols: int | None = typer.Option(None, min=1, help="Optional symbol limit, useful for quick tests."),
+    incremental: bool = typer.Option(False, help="Only fetch bars after each symbol's last cached date."),
     run_backtest_after: bool = typer.Option(True, help="Run the research pipeline after downloading."),
 ) -> None:
     settings = load_settings()
@@ -158,6 +159,7 @@ def real_data(
         symbols_limit=symbols,
         source=source,
         merge_existing=True,
+        incremental=incremental,
     )
     typer.echo(f"Downloaded {len(result.prices):,} rows for {len(result.returned_symbols):,} symbols.")
     if result.missing_symbols:

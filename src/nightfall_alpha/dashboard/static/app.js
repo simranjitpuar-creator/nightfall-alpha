@@ -1796,6 +1796,7 @@ async function downloadRealData(event) {
       end: document.getElementById("dataEnd").value || null,
       symbols_limit: tickersValue ? null : (limitValue ? Number(limitValue) : null),
       run_backtest: document.getElementById("runAfterDownload").checked,
+      incremental: document.getElementById("incrementalDownload").checked,
       strategy: document.getElementById("runAfterDownload").checked ? backtestPayload() : null,
     };
     if (payload.run_backtest) {

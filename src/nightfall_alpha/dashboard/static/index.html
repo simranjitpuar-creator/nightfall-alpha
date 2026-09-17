@@ -162,6 +162,7 @@
                     <option value="yahoo">Yahoo Finance</option>
                     <option value="yahoo_max">Yahoo Max History</option>
                     <option value="stooq">Stooq Long History</option>
+                    <option value="tiingo">Tiingo (free API key)</option>
                   </select>
                 </label>
                 <label>
@@ -183,6 +184,10 @@
                 <label class="checkbox-label">
                   <input id="runAfterDownload" name="runAfterDownload" type="checkbox" checked />
                   <span>Run backtest</span>
+                </label>
+                <label class="checkbox-label">
+                  <input id="incrementalDownload" name="incrementalDownload" type="checkbox" checked />
+                  <span>Incremental (new bars only)</span>
                 </label>
                 <button id="downloadButton" class="primary-btn submit" type="submit">Download Real Data</button>
               </form>
@@ -881,6 +886,8 @@
                   <li><strong>Yahoo Finance</strong> uses the Python <code>yfinance</code> library for adjusted daily OHLCV data. It is usually the fastest source for current US equities.</li>
                   <li><strong>Yahoo Max History</strong> uses the same provider but requests the longest history available from Yahoo. The actual first date still depends on each ticker.</li>
                   <li><strong>Stooq Long History</strong> uses Stooq daily files through the app's Stooq provider. US symbols are normalized into Stooq's expected format where needed.</li>
+                  <li><strong>Tiingo</strong> uses Tiingo's official free EOD API (free API key, 500 requests/day). Set <code>TIINGO_API_KEY</code> in your environment or <code>.env</code> file before using it.</li>
+                  <li><strong>Incremental downloads</strong> only fetch bars after each symbol's last cached date (with a small overlap), so daily refreshes avoid re-downloading full history.</li>
                   <li><strong>S&amp;P 500 universe metadata</strong> can come from the public S&amp;P 500 table on Wikipedia. Wikipedia is used for constituent names/sectors, not for price bars.</li>
                 </ul>
 
