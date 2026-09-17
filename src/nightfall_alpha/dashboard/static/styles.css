@@ -1578,3 +1578,170 @@ tr:last-child td { border-bottom: 0; }
   gap: 6px;
   font-size: 13px;
 }
+
+/* ===================== STATUS BAR ===================== */
+.status-bar {
+  position: sticky;
+  top: 65px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
+  padding: 8px 28px;
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.status-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.status-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.status-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.status-badge {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--loss) 55%, transparent);
+  background: color-mix(in srgb, var(--loss) 14%, transparent);
+  color: var(--loss);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.status-badge.info {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+/* ===================== SUBNAV (merged tabs) ===================== */
+.subnav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.subnav-item {
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.subnav-item:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+.subnav-item.active {
+  color: var(--text-strong);
+  background: linear-gradient(100deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb), 0.06));
+  border-color: rgba(var(--accent-rgb), 0.35);
+}
+
+/* ===================== ADVANCED DRAWERS ===================== */
+.advanced-drawer {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-2) 55%, transparent);
+}
+
+.advanced-drawer > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.advanced-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-drawer > summary::after {
+  content: "+";
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid var(--glass-border);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.advanced-drawer[open] > summary::after {
+  content: "\2013";
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+.advanced-drawer > summary .subtle {
+  font-weight: 400;
+  margin-right: auto;
+}
+
+.drawer-grid {
+  padding: 4px 16px 16px;
+}
+
+.advanced-drawer .optimizer-param-grid {
+  padding: 0 16px 16px;
+}
+
+/* ===================== PRESET ROW ===================== */
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preset-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.preset-row .ghost-button.active {
+  color: var(--text-strong);
+  background: linear-gradient(100deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb), 0.06));
+  border-color: rgba(var(--accent-rgb), 0.35);
+}

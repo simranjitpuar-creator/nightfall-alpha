@@ -152,6 +152,7 @@ function formatPct(value, digits = 2) {
 function formatCompactMoney(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return "";
+  if (number >= 1e15) return `$${number.toExponential(2)}`;
   if (number >= 1e12) return `$${(number / 1e12).toFixed(1)}T`;
   if (number >= 1e9) return `$${(number / 1e9).toFixed(1)}B`;
   if (number >= 1e6) return `$${(number / 1e6).toFixed(0)}M`;
@@ -865,15 +866,27 @@ function finishTaskProgress(id, label, failed = false) {
 }
 
 const TAB_TITLES = {
-  data: "Market Data",
   signal: "Signal Backtest",
-  benchmarks: "Benchmarks",
-  walkforward: "Walk-Forward",
+  evaluation: "Evaluation",
   portfolio: "Portfolio Research",
   trades: "Trade Blotter",
-  framework: "Framework",
-  settings: "Settings",
+  system: "System",
 };
+
+// Merged tabs show one member panel at a time; these are their default views.
+const TAB_SUBPANELS = {
+  evaluation: "benchmarks",
+  system: "data",
+};
+
+function activateSubpanel(tab, sub) {
+  document.querySelectorAll(`[data-tab-panel="${tab}"]`).forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.subpanel === sub);
+  });
+  document
+    .querySelectorAll(`[data-tab-panel="${tab}"] .subnav-item`)
+    .forEach((button) => button.classList.toggle("active", button.dataset.subtab === sub));
+}
 
 function activateTab(tab) {
   document.querySelectorAll("[data-tab]").forEach((button) => {
@@ -882,6 +895,9 @@ function activateTab(tab) {
   document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.tabPanel === tab);
   });
+  if (TAB_SUBPANELS[tab]) {
+    activateSubpanel(tab, TAB_SUBPANELS[tab]);
+  }
   const title = document.getElementById("pageTitle");
   if (title && TAB_TITLES[tab]) title.textContent = TAB_TITLES[tab];
   if (tab === "signal") {
@@ -951,6 +967,30 @@ function renderSurvivorship(survivorship) {
   banner.textContent = survivorship.point_in_time
     ? `Point-in-time index membership active. ${warning}`
     : `Survivorship bias warning: ${warning}`;
+}
+
+function renderStatusBar(overview) {
+  const equity = document.getElementById("statusEquity");
+  if (!equity) return;
+  const metrics = overview.metrics || {};
+  equity.textContent = metrics.final_equity != null ? formatCompactMoney(metrics.final_equity) : "-";
+  document.getElementById("statusSharpe").textContent =
+    metrics.sharpe != null ? formatNumber(metrics.sharpe) : "-";
+  const drawdown = document.getElementById("statusMaxDD");
+  drawdown.textContent = metrics.max_drawdown != null ? formatPct(metrics.max_drawdown) : "-";
+  drawdown.classList.toggle("loss", Number(metrics.max_drawdown) < 0);
+  document.getElementById("statusAsOf").textContent = overview.latest_signal_date || "-";
+  const badge = document.getElementById("statusSurvivorship");
+  const survivorship = overview.survivorship || {};
+  if (survivorship.warning) {
+    badge.hidden = false;
+    badge.textContent = survivorship.point_in_time ? "PIT membership" : "Survivorship bias";
+    badge.classList.toggle("info", Boolean(survivorship.point_in_time));
+    badge.title = survivorship.warning;
+    badge.onclick = () => activateTab("signal");
+  } else {
+    badge.hidden = true;
+  }
 }
 
 function syncSignalWindowFromDownloadInputs() {
@@ -1685,6 +1725,7 @@ async function loadDashboard() {
     max_adv_participation: backtest.max_adv_participation,
   });
   renderSurvivorship(overview.survivorship);
+  renderStatusBar(overview);
   syncSignalWindowFromOverview(overview.data_window);
 
   document.getElementById("asOf").textContent = overview.latest_signal_date
@@ -2289,6 +2330,48 @@ document.getElementById("clearTradeFilters").addEventListener("click", () => {
 document.getElementById("downloadTradesCsv").addEventListener("click", downloadTradesCsv);
 document.querySelectorAll("[data-tab]").forEach((button) => {
   button.addEventListener("click", () => activateTab(button.dataset.tab || "signal"));
+});
+document.querySelectorAll("[data-subtab]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const tab = button.closest("[data-tab-panel]")?.dataset.tabPanel;
+    if (tab) activateSubpanel(tab, button.dataset.subtab);
+  });
+});
+
+const PORTFOLIO_PRESETS = {
+  conservative: {
+    maxWeight: 0.05,
+    kellyFraction: 0.25,
+    meanVarianceRiskAversion: 12,
+    blackLittermanRiskAversion: 12,
+    cvarAlpha: 0.95,
+  },
+  balanced: {
+    maxWeight: 0.12,
+    kellyFraction: 0.5,
+    meanVarianceRiskAversion: 8,
+    blackLittermanRiskAversion: 8,
+    cvarAlpha: 0.95,
+  },
+  aggressive: {
+    maxWeight: 0.2,
+    kellyFraction: 1.0,
+    meanVarianceRiskAversion: 4,
+    blackLittermanRiskAversion: 4,
+    cvarAlpha: 0.975,
+  },
+};
+
+document.querySelectorAll("[data-preset]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const preset = PORTFOLIO_PRESETS[button.dataset.preset];
+    if (!preset) return;
+    Object.entries(preset).forEach(([id, value]) => setNumberInput(id, value));
+    document.querySelectorAll("[data-preset]").forEach((other) => {
+      other.classList.toggle("active", other === button);
+    });
+    toast(`Applied ${button.dataset.preset} preset`);
+  });
 });
 document.querySelectorAll(".curve-toolbar [data-range]").forEach((button) => {
   button.addEventListener("click", () => {

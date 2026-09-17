@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=framework-costs-20260702" />
+    <link rel="stylesheet" href="/static/styles.css?v=declutter-20260916" />
     <script>
       // Apply persisted theme + custom palette before first paint (no flash).
       (function () {
@@ -57,29 +57,17 @@
         </div>
 
         <nav class="nav" aria-label="Dashboard sections">
-          <button class="nav-item" type="button" data-tab="data">
-            <span class="nav-ico" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
-            </span>
-            <span class="nav-label">Market Data</span>
-          </button>
           <button class="nav-item active" type="button" data-tab="signal">
             <span class="nav-ico" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 5-8"/><path d="M3 21h18"/><circle cx="17" cy="6" r="1.6" fill="currentColor" stroke="none"/></svg>
             </span>
             <span class="nav-label">Signal Backtest</span>
           </button>
-          <button class="nav-item" type="button" data-tab="benchmarks">
+          <button class="nav-item" type="button" data-tab="evaluation">
             <span class="nav-ico" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
             </span>
-            <span class="nav-label">Benchmarks</span>
-          </button>
-          <button class="nav-item" type="button" data-tab="walkforward">
-            <span class="nav-ico" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
-            </span>
-            <span class="nav-label">Walk-Forward</span>
+            <span class="nav-label">Evaluation</span>
           </button>
           <button class="nav-item" type="button" data-tab="portfolio">
             <span class="nav-ico" aria-hidden="true">
@@ -93,17 +81,11 @@
             </span>
             <span class="nav-label">Trade Blotter</span>
           </button>
-          <button class="nav-item" type="button" data-tab="framework">
-            <span class="nav-ico" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h11a3 3 0 0 1 3 3v13"/><path d="M6 17h14"/><path d="M6 21h14"/><path d="M8 7h7"/><path d="M8 11h8"/></svg>
-            </span>
-            <span class="nav-label">Framework</span>
-          </button>
-          <button class="nav-item" type="button" data-tab="settings">
+          <button class="nav-item" type="button" data-tab="system">
             <span class="nav-ico" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 6 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 .6 14H.5a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 8a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 8 2.6h.1A1.7 1.7 0 0 0 10 .6V.5a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 16 2.6a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21.4 8v.1A2 2 0 1 1 21.4 12" transform="translate(1.5 1.5) scale(0.92)"/></svg>
             </span>
-            <span class="nav-label">Settings</span>
+            <span class="nav-label">System</span>
           </button>
         </nav>
 
@@ -137,6 +119,26 @@
           </div>
         </header>
 
+        <div id="statusBar" class="status-bar" aria-label="Strategy status summary">
+          <div class="status-item">
+            <span class="status-label">Equity</span>
+            <span id="statusEquity" class="status-value">-</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Sharpe</span>
+            <span id="statusSharpe" class="status-value">-</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Max DD</span>
+            <span id="statusMaxDD" class="status-value">-</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">As of</span>
+            <span id="statusAsOf" class="status-value">-</span>
+          </div>
+          <button id="statusSurvivorship" class="status-badge" type="button" hidden></button>
+        </div>
+
         <div id="taskProgress" class="task-progress" hidden>
           <div class="task-progress-head">
             <span data-progress-label>Working...</span>
@@ -148,8 +150,13 @@
         </div>
 
         <main class="content">
-          <!-- ===================== MARKET DATA ===================== -->
-          <section class="tab-panel" data-tab-panel="data">
+          <!-- ===================== SYSTEM: MARKET DATA ===================== -->
+          <section class="tab-panel" data-tab-panel="system" data-subpanel="data">
+            <div class="subnav" role="tablist" aria-label="System views">
+              <button class="subnav-item active" type="button" data-subtab="data">Market Data</button>
+              <button class="subnav-item" type="button" data-subtab="framework">Framework Docs</button>
+              <button class="subnav-item" type="button" data-subtab="settings">Appearance</button>
+            </div>
             <section class="panel reveal">
               <div class="panel-header">
                 <h2>Market Data</h2>
@@ -207,44 +214,8 @@
                   <input id="signalInitialEquity" name="initialEquity" type="number" min="1" step="1" value="1000000" />
                 </label>
                 <label>
-                  <span>Fees Bps</span>
-                  <input id="signalFeesBps" name="feesBps" type="number" min="0" step="0.1" value="0.5" />
-                </label>
-                <label>
-                  <span>Slippage Bps</span>
-                  <input id="signalSlippageBps" name="slippageBps" type="number" min="0" step="0.1" value="1" />
-                </label>
-                <label>
-                  <span>Signal Lookback</span>
-                  <input id="signalLookbackDays" name="lookbackDays" type="number" min="2" step="1" value="63" />
-                </label>
-                <label>
-                  <span>Min History</span>
-                  <input id="signalMinHistory" name="minHistory" type="number" min="1" step="1" value="40" />
-                </label>
-                <label>
                   <span>Top N</span>
                   <input id="signalTopN" name="topN" type="number" min="1" max="505" step="1" value="25" />
-                </label>
-                <label>
-                  <span>Max Weight</span>
-                  <input id="signalMaxWeight" name="maxWeight" type="number" min="0.01" max="1" step="0.01" value="0.07" />
-                </label>
-                <label>
-                  <span>Min Signal</span>
-                  <input id="signalMinSignal" name="minSignal" type="number" step="0.1" value="0" />
-                </label>
-                <label>
-                  <span>Price Start</span>
-                  <input id="signalPriceStart" name="priceStart" type="date" />
-                </label>
-                <label>
-                  <span>Price End</span>
-                  <input id="signalPriceEnd" name="priceEnd" type="date" />
-                </label>
-                <label class="span-2">
-                  <span>Price Tickers</span>
-                  <input id="signalPriceTickers" name="priceTickers" type="text" placeholder="Blank uses all cached symbols" />
                 </label>
                 <label>
                   <span>Cost Model</span>
@@ -254,17 +225,61 @@
                   </select>
                 </label>
                 <label>
-                  <span>Capital Capacity ($)</span>
-                  <input id="signalCapitalCapacity" name="capitalCapacity" type="number" min="0" step="10000000" value="0" />
+                  <span>Fees Bps</span>
+                  <input id="signalFeesBps" name="feesBps" type="number" min="0" step="0.1" value="0.5" />
                 </label>
                 <label>
-                  <span>Cash Rate (% p.a.)</span>
-                  <input id="signalCashRate" name="cashRate" type="number" min="0" max="50" step="0.25" value="0" />
+                  <span>Slippage Bps</span>
+                  <input id="signalSlippageBps" name="slippageBps" type="number" min="0" step="0.1" value="1" />
                 </label>
                 <label>
-                  <span>Max ADV Participation (%)</span>
-                  <input id="signalAdvParticipation" name="advParticipation" type="number" min="0" max="100" step="1" value="0" />
+                  <span>Price Start</span>
+                  <input id="signalPriceStart" name="priceStart" type="date" />
                 </label>
+                <label>
+                  <span>Price End</span>
+                  <input id="signalPriceEnd" name="priceEnd" type="date" />
+                </label>
+                <details class="advanced-drawer span-4">
+                  <summary>
+                    <span>Strategy tuning</span>
+                    <span class="subtle">lookback, history, weights, capacity limits</span>
+                  </summary>
+                  <div class="form-grid drawer-grid">
+                    <label>
+                      <span>Signal Lookback</span>
+                      <input id="signalLookbackDays" name="lookbackDays" type="number" min="2" step="1" value="63" />
+                    </label>
+                    <label>
+                      <span>Min History</span>
+                      <input id="signalMinHistory" name="minHistory" type="number" min="1" step="1" value="40" />
+                    </label>
+                    <label>
+                      <span>Max Weight</span>
+                      <input id="signalMaxWeight" name="maxWeight" type="number" min="0.01" max="1" step="0.01" value="0.07" />
+                    </label>
+                    <label>
+                      <span>Min Signal</span>
+                      <input id="signalMinSignal" name="minSignal" type="number" step="0.1" value="0" />
+                    </label>
+                    <label class="span-2">
+                      <span>Price Tickers</span>
+                      <input id="signalPriceTickers" name="priceTickers" type="text" placeholder="Blank uses all cached symbols" />
+                    </label>
+                    <label>
+                      <span>Capital Capacity ($)</span>
+                      <input id="signalCapitalCapacity" name="capitalCapacity" type="number" min="0" step="10000000" value="0" />
+                    </label>
+                    <label>
+                      <span>Cash Rate (% p.a.)</span>
+                      <input id="signalCashRate" name="cashRate" type="number" min="0" max="50" step="0.25" value="0" />
+                    </label>
+                    <label>
+                      <span>Max ADV Participation (%)</span>
+                      <input id="signalAdvParticipation" name="advParticipation" type="number" min="0" max="100" step="1" value="0" />
+                    </label>
+                  </div>
+                </details>
                 <button id="runButton" class="primary-btn submit" type="submit">Run Signal Backtest</button>
               </form>
             </section>
@@ -339,8 +354,12 @@
             </section>
           </section>
 
-          <!-- ===================== BENCHMARKS ===================== -->
-          <section class="tab-panel" data-tab-panel="benchmarks">
+          <!-- ===================== EVALUATION: BENCHMARKS ===================== -->
+          <section class="tab-panel" data-tab-panel="evaluation" data-subpanel="benchmarks">
+            <div class="subnav" role="tablist" aria-label="Evaluation views">
+              <button class="subnav-item active" type="button" data-subtab="benchmarks">Benchmarks</button>
+              <button class="subnav-item" type="button" data-subtab="walkforward">Walk-Forward</button>
+            </div>
             <section class="panel reveal">
               <div class="panel-header">
                 <h2>Benchmark Comparison</h2>
@@ -395,8 +414,8 @@
             </section>
           </section>
 
-          <!-- ===================== WALK-FORWARD ===================== -->
-          <section class="tab-panel" data-tab-panel="walkforward">
+          <!-- ===================== EVALUATION: WALK-FORWARD ===================== -->
+          <section class="tab-panel" data-tab-panel="evaluation" data-subpanel="walkforward">
             <section class="panel reveal">
               <div class="panel-header">
                 <h2>Walk-Forward Out-of-Sample Evaluation</h2>
@@ -496,12 +515,24 @@
                   </select>
                 </label>
                 <label>
-                  <span>Missing Data</span>
-                  <select id="builderDataSource" name="builderDataSource">
-                    <option value="yahoo">Yahoo Finance</option>
-                    <option value="yahoo_max" selected>Yahoo Max History</option>
-                    <option value="stooq">Stooq Long History</option>
+                  <span>Return Model</span>
+                  <select id="returnModel" name="returnModel">
+                    <option value="overnight">Overnight</option>
+                    <option value="close_to_close">Close to Close</option>
                   </select>
+                </label>
+                <label>
+                  <span>Rebalance</span>
+                  <select id="rebalanceFrequency" name="rebalanceFrequency">
+                    <option value="none" selected>Static Weights</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Initial Equity</span>
+                  <input id="builderInitialEquity" name="builderInitialEquity" type="number" min="1" step="1" value="1000000" />
                 </label>
                 <label class="span-2">
                   <span>Tickers</span>
@@ -513,42 +544,23 @@
                 </label>
                 <button id="addUniverseButton" class="ghost-button big" type="button">Add Selected</button>
                 <button id="refreshUniverseButton" class="ghost-button big" type="button">Refresh Universe</button>
-                <label>
-                  <span>Return Model</span>
-                  <select id="returnModel" name="returnModel">
-                    <option value="overnight">Overnight</option>
-                    <option value="close_to_close">Close to Close</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Initial Equity</span>
-                  <input id="builderInitialEquity" name="builderInitialEquity" type="number" min="1" step="1" value="1000000" />
-                </label>
-                <label>
-                  <span>Fees Bps</span>
-                  <input id="builderFeesBps" name="builderFeesBps" type="number" min="0" step="0.1" value="0" />
-                </label>
-                <label>
-                  <span>Slippage Bps</span>
-                  <input id="builderSlippageBps" name="builderSlippageBps" type="number" min="0" step="0.1" value="0" />
-                </label>
-                <label>
-                  <span>Default Max Weight</span>
-                  <input id="maxWeight" name="maxWeight" type="number" min="0.01" max="1" step="0.01" value="0.15" />
-                </label>
-                <label>
-                  <span>Rebalance</span>
-                  <select id="rebalanceFrequency" name="rebalanceFrequency">
-                    <option value="none" selected>Static Weights</option>
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="annually">Annually</option>
-                  </select>
-                </label>
-                <div class="optimizer-settings span-4">
-                  <div class="optimizer-settings-head">
-                    <strong id="optimizerSettingsTitle">Optimizer Parameters</strong>
-                    <span class="subtle">All methods run together; blank cap overrides use Default Max Weight.</span>
+                <div class="preset-row span-4" role="group" aria-label="Optimizer presets">
+                  <span class="preset-label">Presets</span>
+                  <button class="ghost-button" type="button" data-preset="conservative">Conservative</button>
+                  <button class="ghost-button" type="button" data-preset="balanced">Balanced</button>
+                  <button class="ghost-button" type="button" data-preset="aggressive">Aggressive</button>
+                  <span class="subtle">fills weight caps and risk aversions below; adjust afterwards if needed</span>
+                </div>
+                <details class="advanced-drawer span-4">
+                  <summary>
+                    <span>Optimizer parameters</span>
+                    <span class="subtle">weight caps, Kelly, risk aversions, CVaR, Black-Litterman</span>
+                  </summary>
+                  <div class="form-grid drawer-grid">
+                    <label>
+                      <span>Default Max Weight</span>
+                      <input id="maxWeight" name="maxWeight" type="number" min="0.01" max="1" step="0.01" value="0.15" />
+                    </label>
                   </div>
                   <div class="optimizer-param-grid">
                     <fieldset class="optimizer-param-block">
@@ -615,27 +627,52 @@
                       </label>
                     </fieldset>
                   </div>
-                </div>
-                <label>
-                  <span>Lookback</span>
-                  <input id="lookbackDays" name="lookbackDays" type="number" min="20" step="1" value="756" />
-                </label>
-                <label class="checkbox-label">
-                  <input id="useAllHistory" name="useAllHistory" type="checkbox" checked />
-                  <span>Use all history</span>
-                </label>
-                <label>
-                  <span>Data Since</span>
-                  <input id="builderDataStart" name="builderDataStart" type="date" value="1900-01-01" />
-                </label>
-                <label class="checkbox-label">
-                  <input id="autoDownloadMissing" name="autoDownloadMissing" type="checkbox" checked />
-                  <span>Auto-fill missing</span>
-                </label>
-                <label class="checkbox-label">
-                  <input id="refreshHistory" name="refreshHistory" type="checkbox" />
-                  <span>Refresh history</span>
-                </label>
+                </details>
+                <details class="advanced-drawer span-4">
+                  <summary>
+                    <span>Costs &amp; data options</span>
+                    <span class="subtle">fees, lookback, history source, refresh behavior</span>
+                  </summary>
+                  <div class="form-grid drawer-grid">
+                    <label>
+                      <span>Fees Bps</span>
+                      <input id="builderFeesBps" name="builderFeesBps" type="number" min="0" step="0.1" value="0" />
+                    </label>
+                    <label>
+                      <span>Slippage Bps</span>
+                      <input id="builderSlippageBps" name="builderSlippageBps" type="number" min="0" step="0.1" value="0" />
+                    </label>
+                    <label>
+                      <span>Lookback</span>
+                      <input id="lookbackDays" name="lookbackDays" type="number" min="20" step="1" value="756" />
+                    </label>
+                    <label>
+                      <span>Data Since</span>
+                      <input id="builderDataStart" name="builderDataStart" type="date" value="1900-01-01" />
+                    </label>
+                    <label>
+                      <span>Missing Data</span>
+                      <select id="builderDataSource" name="builderDataSource">
+                        <option value="yahoo">Yahoo Finance</option>
+                        <option value="yahoo_max" selected>Yahoo Max History</option>
+                        <option value="stooq">Stooq Long History</option>
+                        <option value="tiingo">Tiingo (free API key)</option>
+                      </select>
+                    </label>
+                    <label class="checkbox-label">
+                      <input id="useAllHistory" name="useAllHistory" type="checkbox" checked />
+                      <span>Use all history</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input id="autoDownloadMissing" name="autoDownloadMissing" type="checkbox" checked />
+                      <span>Auto-fill missing</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input id="refreshHistory" name="refreshHistory" type="checkbox" />
+                      <span>Refresh history</span>
+                    </label>
+                  </div>
+                </details>
                 <button id="buildPortfolioButton" class="primary-btn submit" type="submit">Build Portfolio</button>
               </form>
             </section>
@@ -835,8 +872,8 @@
             </section>
           </section>
 
-          <!-- ===================== FRAMEWORK ===================== -->
-          <section class="tab-panel" data-tab-panel="framework">
+          <!-- ===================== SYSTEM: FRAMEWORK DOCS ===================== -->
+          <section class="tab-panel" data-tab-panel="system" data-subpanel="framework">
             <section class="panel reveal framework-hero">
               <div class="panel-header">
                 <h2>Dashboard Framework</h2>
@@ -1114,8 +1151,8 @@
             </section>
           </section>
 
-          <!-- ===================== SETTINGS ===================== -->
-          <section class="tab-panel" data-tab-panel="settings">
+          <!-- ===================== SYSTEM: APPEARANCE ===================== -->
+          <section class="tab-panel" data-tab-panel="system" data-subpanel="settings">
             <section class="panel reveal">
               <div class="panel-header">
                 <h2>Appearance</h2>
