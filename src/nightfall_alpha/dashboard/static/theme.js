@@ -216,7 +216,7 @@
 
     const customize = document.getElementById("customizeButton");
     if (customize) customize.addEventListener("click", () => {
-      if (typeof window.activateTab === "function") window.activateTab("settings");
+      if (typeof window.activateTab === "function") window.activateTab("system");
     });
 
     document.querySelectorAll("#modeSeg .seg-btn").forEach((b) => {
