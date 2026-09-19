@@ -336,7 +336,7 @@ Model impact: Raising this filter makes the strategy more selective and can leav
 Details: Signal values are rolling overnight Sharpe-like scores, so the scale depends on the chosen lookback and available history.`,
   signalPriceStart: `Description: First price date used by the Signal Backtest.
 Model impact: This controls the beginning of the backtest data window for equity, drawdown, metrics, candidates, and trades.
-Details: It is normally synced from the Market Data tab after a download, but you can override it here for research runs.`,
+Details: It is normally synced from the Market Data tab after a download, but you can override it here for research runs. The date is a filter on the local cache, not a data source: if you pick a date earlier than the cache's first bar (currently 1962-01-02, Yahoo's adjusted-history floor for most tickers), the run starts at the first available bar and the summary line says so. To test earlier periods, download older history first — Stooq can reach further back for some names.`,
   signalPriceEnd: `Description: Last price date used by the Signal Backtest.
 Model impact: This controls the ending data window for the signal backtest and prevents the curves from using data outside the selected research range.
 Details: Leave blank to use the latest cached date available for the selected symbols.`,
@@ -1157,8 +1157,12 @@ function renderOverviewHome(overview) {
     const windowText = dataWindow.start
       ? `Cache covers ${dataWindow.start} to ${dataWindow.end}.`
       : "No price cache yet — run a download in System → Market Data.";
+    let clampText = "";
+    if (dataWindow.requested_start && dataWindow.start && dataWindow.requested_start < dataWindow.start) {
+      clampText = ` Last run requested ${dataWindow.requested_start}, but the cache only begins ${dataWindow.start} — download older history (System → Market Data) to test earlier periods.`;
+    }
     const survText = survivorship.warning ? ` ${survivorship.warning}` : "";
-    note.textContent = `${windowText}${survText}`;
+    note.textContent = `${windowText}${clampText}${survText}`;
   }
 }
 
@@ -1934,9 +1938,17 @@ async function loadDashboard() {
     const windowText = dataWindow.start && dataWindow.end
       ? `price window ${dataWindow.start} to ${dataWindow.end} | ${symbolText}`
       : "selected signal backtest price window";
+    const clampNotes = [];
+    if (dataWindow.requested_start && dataWindow.start && dataWindow.requested_start < dataWindow.start) {
+      clampNotes.push(`requested ${dataWindow.requested_start} but cache begins ${dataWindow.start}`);
+    }
+    if (dataWindow.requested_end && dataWindow.end && dataWindow.requested_end > dataWindow.end) {
+      clampNotes.push(`requested end ${dataWindow.requested_end} but cache ends ${dataWindow.end}`);
+    }
+    const clampText = clampNotes.length ? ` | ${clampNotes.join("; ")}` : "";
     summaryMeta.textContent = start && end
-      ? `${start} to ${end} | ${windowText} | not the chart zoom window`
-      : `${windowText} | not the chart zoom window`;
+      ? `${start} to ${end} | ${windowText}${clampText} | not the chart zoom window`
+      : `${windowText}${clampText} | not the chart zoom window`;
   }
 
   renderMetrics(overview.metrics || {});
