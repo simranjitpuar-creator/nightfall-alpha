@@ -16,7 +16,7 @@ NightFall Alpha is a research and dashboard project for the overnight effect: en
 - Performance metrics: CAGR, Sharpe, Sortino, max drawdown, Calmar, VaR, CVaR, win rate, profit factor, exposure, turnover, and more.
 - Portfolio construction styles: Kelly, mean variance, minimum variance, inverse volatility, CVaR-aware, and Black-Litterman-style posterior returns.
 - A custom portfolio builder where you choose tickers or let the app select the best optimizer result.
-- A FastAPI dashboard with native browser charts.
+- A FastAPI dashboard with interactive charts (ECharts), organized as six tabs: Overview, Signal Backtest, Evaluation (Benchmarks + Walk-Forward), Portfolio Research, Trade Blotter, and System (Market Data, Framework Docs, Appearance).
 - Unit tests for strategy features, risk metrics, optimizer constraints, cost models, capacity, membership, benchmarks, and walk-forward evaluation.
 
 ## Quick start
@@ -37,6 +37,12 @@ $env:PYTHONPATH = "src"
 Optional extras: `pip install -e ".[streamlit]"` for the Streamlit UI, `pip install -e ".[broker]"` for the future Interactive Brokers adapter, and `pip install -e ".[dev]"` for the ruff linter.
 
 Then open [http://127.0.0.1:8776](http://127.0.0.1:8776). NightFall Alpha uses `8776` by default so it does not collide with other local dashboards that may already use `8765`.
+
+### Finding your way around
+
+The dashboard opens on the **Overview** tab: a plain-English explanation of the strategy, a live snapshot of the loaded data (price window, universe size, trade count, headline metrics), the five-step workflow with jump buttons into each tab, a first-run quickstart, a glossary of key concepts (overnight return, signal rank, bps, era costs, walk-forward, survivorship bias, capacity, benchmarks), and the caveats to read before trusting any number.
+
+Every control, table column, and chart title has a **? help icon** — hover for a quick explanation, click to pin it. Each note follows the same format: what it is, how it affects the model, and practical details.
 
 Startup behavior:
 
@@ -157,7 +163,7 @@ $env:PYTHONPATH = "src"
 
 Supported methods are `best`, `Kelly 50%`, `Mean Variance`, `Minimum Variance`, `Inverse Volatility`, `CVaR Aware`, and `Black-Litterman`. The dashboard Portfolio Builder exposes the same controls and shows optimizer metrics plus target weights.
 
-In the dashboard, the Portfolio Builder can auto-fill missing tickers. If a ticker is not already present in `data/processed/prices.csv`, the app downloads that ticker through Yahoo Finance, merges it into the local price cache, and then builds the portfolio.
+In the dashboard, the Portfolio Builder can auto-fill missing tickers. If a ticker is not already present in the local price cache (`data/processed/prices.parquet`), the app downloads that ticker through Yahoo Finance, merges it into the cache, and then builds the portfolio.
 
 Use `Universe Mode -> Entire Local Universe` to build against every symbol currently present in the local price cache. Use the Universe Selector to choose stocks grouped by SPDR sector code such as `XLK`, `XLF`, and `XLV`; options are sorted by market cap when market-cap metadata is available.
 

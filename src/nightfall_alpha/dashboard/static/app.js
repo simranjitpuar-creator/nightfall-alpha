@@ -343,6 +343,45 @@ Details: Leave blank to use the latest cached date available for the selected sy
   signalPriceTickers: `Description: Optional ticker subset for the Signal Backtest.
 Model impact: When filled, the signal engine only uses these cached symbols. When blank, it uses all symbols currently available in the local price cache after the date filters.
 Details: This is useful for testing a custom mini-universe without changing the Market Data cache.`,
+  benchmarkRefresh: `Description: Chooses whether the benchmark comparison uses the cached benchmark files or re-downloads them from Yahoo.
+Model impact: Re-downloading picks up newer benchmark history but takes longer; the numbers only change where the underlying benchmark data changed.
+Details: Leave on Use cache for day-to-day comparisons; re-download after long gaps or if a benchmark looks stale.`,
+  wfTrainDays: `Description: Number of trading days in each walk-forward training window.
+Model impact: Longer windows estimate parameters more stably but adapt more slowly to regime changes; shorter windows adapt faster but can overfit noise.
+Details: 756 days is roughly three trading years. Parameters are re-fit inside every fold.`,
+  wfTestDays: `Description: Number of trading days in each out-of-sample test window.
+Model impact: Longer tests give more reliable per-fold OOS statistics but fewer total folds; shorter tests give more folds with noisier numbers.
+Details: 63 days is roughly one trading quarter.`,
+  wfStepDays: `Description: How far the window rolls forward between folds.
+Model impact: Steps smaller than Test Days create overlapping test windows (more folds, correlated results); steps equal to Test Days give clean non-overlapping evaluation.
+Details: Keep Step equal to Test unless you deliberately want overlapping folds.`,
+  wfMaxFolds: `Description: Caps how many walk-forward folds actually run. 0 means all possible folds.
+Model impact: Fewer folds finish much faster — each fold re-fits parameters on a full training window.
+Details: The default of 8 gives a first answer in under a minute; raise it once the setup looks right.`,
+  wfStartDate: `Description: Earliest allowed end date for a test window.
+Model impact: Skips folds whose test period ends before this date, focusing evaluation on more recent, more relevant regimes.
+Details: Useful because early-history data is thinner and era costs make old results less comparable.`,
+  wfMetric: `Description: The metric used to pick the best parameters on each training window.
+Model impact: Sharpe favors smooth risk-adjusted returns; Sortino penalizes downside more; Calmar focuses on drawdown; CAGR chases raw growth.
+Details: The chosen metric is maximized in-sample, then the frozen parameters are scored out-of-sample.`,
+  wfCostModel: `Description: Cost model used inside walk-forward evaluation.
+Model impact: Historical charges era-realistic bps (much higher in early decades), which can change which parameters win; Flat charges the same bps everywhere.
+Details: Use historical for honest long-window studies, flat when comparing against the flat-cost backtest.`,
+  tradeSymbolFilter: `Description: Restricts the blotter to symbols containing this text.
+Model impact: Display-only filter — the underlying trade history is unchanged.
+Details: Case-insensitive substring match, so AA matches AAPL and AAL. Clear it to see all symbols.`,
+  tradeStartFilter: `Description: First entry date shown in the blotter.
+Model impact: Display-only filter — no recomputation.
+Details: Combine with the PnL filter to audit losing trades in a specific era, like the 2008 crisis.`,
+  tradeEndFilter: `Description: Last entry date shown in the blotter.
+Model impact: Display-only filter — no recomputation.
+Details: Leave blank to include the most recent trades.`,
+  tradePnlFilter: `Description: Shows all trades, only winners (net PnL above zero), or only losers.
+Model impact: Display-only filter — the summary cards still show totals for the filtered set.
+Details: Losers view is the fastest way to spot cost drag or systematically bad symbols.`,
+  tradeLimitFilter: `Description: Maximum number of table rows returned, taken from the most recent matching trades.
+Model impact: Display-only — the summary counts still reflect every matching trade.
+Details: The full filtered set (beyond this cap) is always available via Download CSV.`,
   universeMode: `Description: Chooses whether the portfolio builder uses only typed/selected tickers or the entire locally cached universe.
 Model impact: Selected Stocks gives controlled custom portfolios. Entire Local Universe lets the optimizer search across all cached symbols, which can materially change weights and risk metrics.
 Details: Entire universe runs can take longer and depend heavily on data availability.`,
@@ -603,6 +642,111 @@ Model impact: Output only. It scales with Initial Equity but does not change per
 Details: Useful for turning model weights into executable notional targets.`,
 };
 
+const TRADE_HEADER_HELP = {
+  "Entry Date": `Description: The signal date — the close at which the position is bought.
+Model impact: This is the date the stock's overnight signal rank qualified it for the book.
+Details: The position is held from this close to the next session's close.`,
+  "Exit Date": `Description: The date the position is sold at the close.
+Model impact: Gross PnL is measured close-to-close across this overnight holding period.
+Details: Usually the next trading session after Entry Date; weekends and holidays stretch the gap.`,
+  Rank: `Description: The stock's signal rank on the entry date — 1 is the strongest overnight candidate.
+Model impact: Only ranks up to the Top N control are traded, so rank decides membership in the book.
+Details: Rank comes from rolling overnight Sharpe over the signal lookback window.`,
+  Ticker: `Description: The stock symbol traded.
+Model impact: Filter the blotter by symbol to audit one name's trade history.
+Details: Use the Symbol filter above; it matches substrings, so AA also matches AAPL.`,
+  "Target Weight": `Description: Fraction of total equity assigned to this position.
+Model impact: Controlled by the Top N and Max Weight settings in the Signal Backtest tab.
+Details: 0.07 means 7 percent of current equity was committed to this overnight trade.`,
+  "Overnight Return": `Description: The stock's close-to-close return over the holding period.
+Model impact: This is the raw market outcome before any transaction costs.
+Details: Overnight Return × Notional = Gross PnL.`,
+  Notional: `Description: Dollar size of the position — Target Weight × current equity.
+Model impact: Scales with the Initial Equity control; percentage results are unaffected.
+Details: Both gross PnL and cost are computed from this dollar base.`,
+  "Gross PnL": `Description: Profit or loss before transaction costs.
+Model impact: Notional × Overnight Return.
+Details: Compare against Cost to see how much of each trade the friction consumes.`,
+  Cost: `Description: Transaction cost charged on this trade in dollars.
+Model impact: Notional × era cost rate — the historical model charges much higher bps in early decades.
+Details: With the flat model, Cost = Notional × (fees + slippage) in bps, applied per side.`,
+  "Net PnL": `Description: Profit or loss after costs — Gross PnL − Cost.
+Model impact: This is what actually compounds into the equity curve.
+Details: Filter to Losers to see where net PnL is negative.`,
+  "O/N Sharpe": `Description: The stock's rolling overnight Sharpe at the time of the signal.
+Model impact: This is the score the ranking is based on — higher means a more consistent overnight record.
+Details: Computed over the signal lookback window set in the Signal Backtest tab.`,
+};
+
+const BENCHMARK_HEADER_HELP = {
+  Benchmark: `Description: The comparison index for this row.
+Model impact: All relative statistics (beta, alpha, capture) are measured against this series.
+Details: MSCI World is proxied by the URTH ETF from 2012; US 10Y Treasury is approximated from the ^TNX yield.`,
+  Obs: `Description: Number of overlapping daily observations between the strategy and this benchmark.
+Model impact: Fewer observations make beta, alpha, and correlation less reliable.
+Details: MSCI World has far fewer observations because its proxy only starts in 2012.`,
+  "Strat CAGR": `Description: Strategy compounded annual growth rate over the overlap window.
+Model impact: Output only. Recomputed over exactly the dates where the benchmark exists.
+Details: This can differ from the headline CAGR on the Signal Backtest tab because the window is clipped to the benchmark overlap.`,
+  "Bench CAGR": `Description: The benchmark's compounded annual growth rate over the overlap window.
+Model impact: The yardstick for whether the strategy beat passive exposure.
+Details: Compare on the same row only — different rows cover different windows.`,
+  "Bench Sharpe": `Description: The benchmark's annualized Sharpe ratio over the overlap window.
+Model impact: Shows whether the strategy's risk-adjusted edge beats simply holding the index.
+Details: Risk-free rate is 0 unless configured otherwise.`,
+  "Bench Max DD": `Description: The benchmark's worst peak-to-trough drawdown over the overlap window.
+Model impact: Compare against the strategy's Max DD to judge relative path risk.
+Details: More negative means a deeper loss from the peak.`,
+  Corr: `Description: Correlation between daily strategy and benchmark returns.
+Model impact: Near 1 means the strategy is basically the index; near 0 means genuinely diversifying.
+Details: Overnight strategies typically show low correlation, which is part of their appeal.`,
+  Beta: `Description: Sensitivity of strategy returns to benchmark returns.
+Model impact: Beta of 0.5 means the strategy tends to move half as much as the benchmark.
+Details: Computed by regression of daily strategy returns on daily benchmark returns.`,
+  "Alpha (ann.)": `Description: Annualized return the strategy adds beyond what beta exposure to the benchmark explains.
+Model impact: Positive alpha means the edge is not just disguised market exposure.
+Details: Regression intercept, annualized.`,
+  "Info Ratio": `Description: Active return divided by tracking error.
+Model impact: Measures consistency of outperformance, not just its size.
+Details: Above ~0.5 is generally considered good for an active strategy.`,
+  "Up Capture": `Description: How much of the benchmark's up-day return the strategy captures.
+Model impact: Above 100 percent means the strategy gains more than the benchmark on its good days.
+Details: Best read together with Down Capture.`,
+  "Down Capture": `Description: How much of the benchmark's down-day return the strategy suffers.
+Model impact: Below 100 percent means the strategy loses less on the benchmark's bad days.
+Details: A good profile is high Up Capture with low Down Capture.`,
+};
+
+const WALKFORWARD_HEADER_HELP = {
+  Fold: `Description: Sequential index of the walk-forward split.
+Model impact: Each fold re-fits parameters on its own training window — no fold sees the future.
+Details: More folds give a richer picture of parameter stability across eras.`,
+  Train: `Description: The in-sample window used to pick parameters for this fold.
+Model impact: Lookback and Top N are chosen to maximize the selection metric over these dates only.
+Details: Controlled by the Train Days input.`,
+  Test: `Description: The out-of-sample window where those frozen parameters are scored.
+Model impact: These results are the honest estimate — the model never saw this data when choosing parameters.
+Details: Controlled by the Test Days input; windows step forward by Step Days.`,
+  Lookback: `Description: The signal lookback chosen on the training window.
+Model impact: Shows whether the optimal lookback is stable or jumps around between eras.
+Details: Large swings fold-to-fold suggest the signal is regime-sensitive.`,
+  "Top N": `Description: The book size chosen on the training window.
+Model impact: Shows whether concentration or diversification was favored in each era.
+Details: Chosen from the candidate grid by the selection metric.`,
+  "Train Score": `Description: The in-sample selection metric value achieved by the chosen parameters.
+Model impact: This is the optimistic number — expect the OOS columns to be weaker.
+Details: The gap between Train Score and OOS Sharpe is the overfitting tax.`,
+  "OOS Sharpe": `Description: Out-of-sample Sharpe on the test window with frozen parameters.
+Model impact: The single most honest performance number on this dashboard.
+Details: Consistently positive OOS Sharpe across folds is the real evidence of an edge.`,
+  "OOS CAGR": `Description: Out-of-sample compounded annual growth on the test window.
+Model impact: Return actually earned by frozen parameters on unseen data.
+Details: Annualized, so short test windows can exaggerate it.`,
+  "OOS Max DD": `Description: Worst peak-to-trough drawdown during the out-of-sample test window.
+Model impact: Shows the pain you would have felt trading parameters picked on prior data.
+Details: More negative means a deeper loss within that fold's test window.`,
+};
+
 let activeHelpAnchor = null;
 let pinnedHelpAnchor = null;
 
@@ -761,14 +905,24 @@ function decorateHelpTargets() {
   decoratePortfolioHeaderHelp();
 }
 
-function decoratePortfolioHeaderHelp() {
-  ["builderSummaryBody", "portfolioBody"].forEach((bodyId) => {
+function decorateTableHeaderHelp(targets) {
+  targets.forEach(({ bodyId, dict, prefix }) => {
     const headers = document.getElementById(bodyId)?.closest("table")?.querySelectorAll("thead th") || [];
     headers.forEach((header) => {
       const label = header.textContent.trim();
-      attachHelpIconWithText(header, `portfolio-header-${label.replace(/\W+/g, "-").toLowerCase()}`, PORTFOLIO_HEADER_HELP[label]);
+      attachHelpIconWithText(header, `${prefix}-${label.replace(/\W+/g, "-").toLowerCase()}`, dict[label]);
     });
   });
+}
+
+function decoratePortfolioHeaderHelp() {
+  decorateTableHeaderHelp([
+    { bodyId: "builderSummaryBody", dict: PORTFOLIO_HEADER_HELP, prefix: "portfolio-header" },
+    { bodyId: "portfolioBody", dict: PORTFOLIO_HEADER_HELP, prefix: "portfolio-header" },
+    { bodyId: "tradesBody", dict: TRADE_HEADER_HELP, prefix: "trade-header" },
+    { bodyId: "benchmarkBody", dict: BENCHMARK_HEADER_HELP, prefix: "benchmark-header" },
+    { bodyId: "walkforwardBody", dict: WALKFORWARD_HEADER_HELP, prefix: "walkforward-header" },
+  ]);
 }
 
 document.addEventListener("click", (event) => {
@@ -866,6 +1020,7 @@ function finishTaskProgress(id, label, failed = false) {
 }
 
 const TAB_TITLES = {
+  overview: "Overview",
   signal: "Signal Backtest",
   evaluation: "Evaluation",
   portfolio: "Portfolio Research",
@@ -970,6 +1125,41 @@ function renderSurvivorship(survivorship) {
   banner.textContent = survivorship.point_in_time
     ? `Point-in-time index membership active. ${warning}`
     : `Survivorship bias warning: ${warning}`;
+}
+
+function renderOverviewHome(overview) {
+  const grid = document.getElementById("overviewStatGrid");
+  if (!grid) return;
+  const metrics = overview.metrics || {};
+  const dataWindow = overview.data_window || {};
+  const tradeSummary = state.tradeSummary || {};
+  const stats = [
+    ["Price Window", dataWindow.start && dataWindow.end ? `${dataWindow.start} → ${dataWindow.end}` : "-"],
+    ["Universe", dataWindow.symbol_count ? `${Number(dataWindow.symbol_count).toLocaleString()} symbols` : "-"],
+    ["Signals", tradeSummary.source_total_trades != null ? Number(tradeSummary.source_total_trades).toLocaleString() : "-"],
+    ["Ending Equity", metrics.final_equity != null ? formatCompactMoney(metrics.final_equity) : "-"],
+    ["Sharpe", metrics.sharpe != null ? formatNumber(metrics.sharpe) : "-"],
+    ["Max Drawdown", metrics.max_drawdown != null ? formatPct(metrics.max_drawdown) : "-"],
+  ];
+  grid.replaceChildren();
+  stats.forEach(([label, value]) => {
+    const tile = document.createElement("article");
+    tile.className = "metric";
+    tile.innerHTML = `
+      <div class="metric-label">${label}</div>
+      <div class="metric-value">${value}</div>
+    `;
+    grid.appendChild(tile);
+  });
+  const note = document.getElementById("overviewDataNote");
+  const survivorship = overview.survivorship || {};
+  if (note) {
+    const windowText = dataWindow.start
+      ? `Cache covers ${dataWindow.start} to ${dataWindow.end}.`
+      : "No price cache yet — run a download in System → Market Data.";
+    const survText = survivorship.warning ? ` ${survivorship.warning}` : "";
+    note.textContent = `${windowText}${survText}`;
+  }
 }
 
 function renderStatusBar(overview) {
@@ -1729,6 +1919,7 @@ async function loadDashboard() {
   });
   renderSurvivorship(overview.survivorship);
   renderStatusBar(overview);
+  renderOverviewHome(overview);
   syncSignalWindowFromOverview(overview.data_window);
 
   document.getElementById("asOf").textContent = overview.latest_signal_date
@@ -2405,7 +2596,10 @@ document.getElementById("clearTradeFilters").addEventListener("click", () => {
 });
 document.getElementById("downloadTradesCsv").addEventListener("click", downloadTradesCsv);
 document.querySelectorAll("[data-tab]").forEach((button) => {
-  button.addEventListener("click", () => activateTab(button.dataset.tab || "signal"));
+  button.addEventListener("click", () => activateTab(button.dataset.tab || "overview"));
+});
+document.querySelectorAll("[data-goto-tab]").forEach((button) => {
+  button.addEventListener("click", () => activateTab(button.dataset.gotoTab || "overview"));
 });
 document.querySelectorAll("[data-subtab]").forEach((button) => {
   button.addEventListener("click", () => {

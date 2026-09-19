@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=echarts-20260918" />
+    <link rel="stylesheet" href="/static/styles.css?v=overview-20260918" />
     <script>
       // Apply persisted theme + custom palette before first paint (no flash).
       (function () {
@@ -57,7 +57,13 @@
         </div>
 
         <nav class="nav" aria-label="Dashboard sections">
-          <button class="nav-item active" type="button" data-tab="signal">
+          <button class="nav-item active" type="button" data-tab="overview">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg>
+            </span>
+            <span class="nav-label">Overview</span>
+          </button>
+          <button class="nav-item" type="button" data-tab="signal">
             <span class="nav-ico" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 5-8"/><path d="M3 21h18"/><circle cx="17" cy="6" r="1.6" fill="currentColor" stroke="none"/></svg>
             </span>
@@ -150,6 +156,137 @@
         </div>
 
         <main class="content">
+          <!-- ===================== OVERVIEW ===================== -->
+          <section class="tab-panel active" data-tab-panel="overview">
+            <section class="panel reveal overview-hero">
+              <h2>Welcome to NightFall Alpha</h2>
+              <p class="overview-lead">
+                A research desk for a simple idea: <strong>stocks that repeatedly gain overnight tend to keep doing it for a while.</strong>
+              </p>
+              <p>
+                Each trading day, the engine scores every stock in the universe by its recent overnight performance
+                (last close to today's open), buys the strongest names at the close, sells them at the next close,
+                and compounds the result after realistic transaction costs. This dashboard lets you run that strategy,
+                compare it against benchmarks, test whether it survives out-of-sample, build optimized portfolios,
+                and audit every single trade it would have made.
+              </p>
+            </section>
+
+            <section class="summary-block reveal" aria-label="Current data state">
+              <div class="section-heading">
+                <h2>Your Data Right Now</h2>
+                <span class="subtle">loaded from the local price cache and the latest saved run</span>
+              </div>
+              <div id="overviewStatGrid" class="metric-grid compact-metrics"></div>
+              <p id="overviewDataNote" class="subtle"></p>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>How the Dashboard Flows</h2>
+                <span class="subtle">left to right, top to bottom — each tab feeds the next</span>
+              </div>
+              <div class="overview-steps">
+                <div class="overview-step">
+                  <span class="step-number">1</span>
+                  <h3>Market Data</h3>
+                  <p>Download daily prices into the local cache. Everything else runs off this cache, so fresh data in means fresh results out.</p>
+                  <button class="ghost-button" type="button" data-goto-tab="system">Open Market Data</button>
+                </div>
+                <div class="overview-step">
+                  <span class="step-number">2</span>
+                  <h3>Signal Backtest</h3>
+                  <p>The core engine: ranks stocks by overnight signal, holds the top names overnight, and compounds equity after fees, slippage, and era-realistic costs.</p>
+                  <button class="ghost-button" type="button" data-goto-tab="signal">Open Signal Backtest</button>
+                </div>
+                <div class="overview-step">
+                  <span class="step-number">3</span>
+                  <h3>Evaluation</h3>
+                  <p>Reality checks. Compare growth against benchmarks (S&amp;P 500, Nasdaq, MSCI World, Treasuries) and run walk-forward tests that re-fit parameters out-of-sample.</p>
+                  <button class="ghost-button" type="button" data-goto-tab="evaluation">Open Evaluation</button>
+                </div>
+                <div class="overview-step">
+                  <span class="step-number">4</span>
+                  <h3>Portfolio Research</h3>
+                  <p>Portfolio construction: optimize allocations across names or signals with mean-variance, Black-Litterman, CVaR, and Kelly-style sizing.</p>
+                  <button class="ghost-button" type="button" data-goto-tab="portfolio">Open Portfolio Research</button>
+                </div>
+                <div class="overview-step">
+                  <span class="step-number">5</span>
+                  <h3>Trade Blotter</h3>
+                  <p>The audit trail: every individual overnight trade with its rank, weight, gross P&amp;L, cost, and net P&amp;L. Filter, inspect, export.</p>
+                  <button class="ghost-button" type="button" data-goto-tab="trades">Open Trade Blotter</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>First-Run Quickstart</h2>
+              </div>
+              <ol class="overview-quickstart">
+                <li><strong>Get data.</strong> Open <em>System &rarr; Market Data</em>, pick a source (Yahoo is fastest; Stooq has the longest history; Tiingo needs a free API key), leave tickers blank for the full S&amp;P 500 universe, and press <em>Download Real Data</em> with <em>Run backtest</em> checked.</li>
+                <li><strong>Read the headline.</strong> The status bar at the top always shows ending equity, Sharpe, and max drawdown of the latest run.</li>
+                <li><strong>Check the curve.</strong> <em>Signal Backtest</em> shows the equity curve, drawdown, and today's candidate list. Hover any <strong>?</strong> icon to learn what a control does before changing it.</li>
+                <li><strong>Stress it.</strong> In <em>Evaluation &rarr; Walk-Forward</em>, press <em>Run Walk-Forward</em>. If the edge only works in-sample, you will see it fall apart here.</li>
+                <li><strong>Audit it.</strong> In <em>Trade Blotter</em>, filter to <em>Losers</em> and scan for patterns — costs, specific symbols, specific eras.</li>
+              </ol>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2>Key Concepts in Plain English</h2>
+              </div>
+              <div class="overview-concepts">
+                <div class="concept-card">
+                  <h3>Overnight return</h3>
+                  <p>Today's open &divide; yesterday's close &minus; 1. The strategy only ever holds positions between one close and the next — it is never exposed during the trading day.</p>
+                </div>
+                <div class="concept-card">
+                  <h3>Signal rank</h3>
+                  <p>Each day every stock is scored by its rolling overnight Sharpe over the lookback window. Rank 1 is the strongest candidate; the book takes the top N.</p>
+                </div>
+                <div class="concept-card">
+                  <h3>Basis points (bps)</h3>
+                  <p>1 bp = 0.01%. Fees and slippage are charged per side in bps. Small numbers compound brutally over hundreds of thousands of trades, which is why cost assumptions matter.</p>
+                </div>
+                <div class="concept-card">
+                  <h3>Era costs</h3>
+                  <p>Trading in 1962 was far more expensive than today. The historical cost model charges era-appropriate bps so old performance is not flattered by modern commission rates.</p>
+                </div>
+                <div class="concept-card">
+                  <h3>Walk-forward</h3>
+                  <p>Instead of picking parameters on the full history, walk-forward fits them on a training window, tests on the following unseen window, then rolls forward. It is the main defense against overfitting.</p>
+                </div>
+                <div class="concept-card">
+                  <h3>Survivorship bias</h3>
+                  <p>Testing only on today's S&amp;P 500 members ignores delisted failures and inflates results. The status bar badge tells you whether the universe is point-in-time or survivor-skewed.</p>
+                </div>
+                <div class="concept-card">
+                  <h3>Capacity</h3>
+                  <p>A strategy trading $1,000 behaves nothing like one trading $1B. Capacity limits model how much capital the overnight book could actually deploy before moving prices.</p>
+                </div>
+                <div class="concept-card">
+                  <h3>Benchmarks</h3>
+                  <p>Each benchmark series starts at $1.00 on its first available date inside the strategy window. Gaps mean the data does not exist yet (MSCI World's URTH proxy starts in 2012) — never a flat zero.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel reveal overview-caveats">
+              <div class="panel-header">
+                <h2>Read This Before Trusting Any Number</h2>
+              </div>
+              <ul>
+                <li><strong>This is a research tool, not investment advice.</strong> Past overnight patterns may stop working at any time.</li>
+                <li><strong>Sample data is synthetic.</strong> If you have not downloaded real data, results come from generated prices and are useful only for learning the interface. The Market Data tab fixes this.</li>
+                <li><strong>Fills are idealized.</strong> The backtest assumes you can buy at the close and sell at the next close at size. Real overnight auctions have spreads, partial fills, and gaps.</li>
+                <li><strong>Benchmarks are proxies.</strong> MSCI World is approximated by the URTH ETF (from 2012) and the 10Y Treasury by a yield-derived return — useful for context, not for accounting.</li>
+                <li><strong>Survivorship status matters.</strong> Check the badge in the status bar. A survivor-skewed universe flatters every metric on this dashboard.</li>
+              </ul>
+            </section>
+          </section>
+
           <!-- ===================== SYSTEM: MARKET DATA ===================== -->
           <section class="tab-panel" data-tab-panel="system" data-subpanel="data">
             <div class="subnav" role="tablist" aria-label="System views">
@@ -202,7 +339,7 @@
           </section>
 
           <!-- ===================== SIGNAL BACKTEST ===================== -->
-          <section class="tab-panel active" data-tab-panel="signal">
+          <section class="tab-panel" data-tab-panel="signal">
             <section class="panel reveal">
               <div class="panel-header">
                 <h2>Signal Backtest Settings</h2>
@@ -896,10 +1033,13 @@
               <article class="framework-card reveal">
                 <h3>System Map</h3>
                 <ul>
-                  <li><strong>Market Data</strong> updates the local price cache at <code>data/processed/prices.csv</code>.</li>
+                  <li><strong>Overview</strong> is the landing tab: what the strategy does, the live state of the loaded data, the five-step workflow, a first-run quickstart, and a plain-English glossary.</li>
+                  <li><strong>Market Data</strong> updates the local price cache at <code>data/processed/prices.parquet</code>.</li>
                   <li><strong>Signal Backtest</strong> reads the local price cache, creates overnight features, ranks stocks, runs the strategy, and writes reports to <code>data/reports</code>.</li>
+                  <li><strong>Evaluation</strong> compares the strategy against benchmarks and runs walk-forward out-of-sample tests.</li>
                   <li><strong>Portfolio Research</strong> can either build a fresh optimizer suite from the current builder form or display the saved universe suite from the latest signal/data pipeline run.</li>
                   <li><strong>Trade Blotter</strong> reads the saved signal backtest executions from <code>data/reports/trades.csv</code>.</li>
+                  <li><strong>Help icons (?)</strong> on controls and table headers explain what each item is, how it affects the model, and practical usage details.</li>
                 </ul>
               </article>
 
@@ -939,7 +1079,7 @@
 
                 <h3>Cache And Updates</h3>
                 <ul>
-                  <li>Downloaded prices are merged into <code>data/processed/prices.csv</code> and de-duplicated by date and symbol.</li>
+                  <li>Downloaded prices are merged into <code>data/processed/prices.parquet</code> and de-duplicated by date and symbol.</li>
                   <li>The app does not download all market data on startup. A refresh happens when you use the Market Data tab, or when Portfolio Research fills missing symbols or refreshes history.</li>
                   <li>The cache loader repairs malformed rows, removes impossible future dates, normalizes symbols, coerces numeric fields, and rewrites the cleaned file when needed.</li>
                   <li>Provider failures, delisted symbols, renamed symbols, missing opens, and stale bars can create gaps. The app filters unusable rows, but it cannot guarantee institutional point-in-time data quality.</li>
@@ -1221,7 +1361,7 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
     <script src="/static/vendor/echarts.min.js?v=5.5.1"></script>
-    <script src="/static/app.js?v=echarts-20260918"></script>
-    <script src="/static/theme.js?v=echarts-20260918"></script>
+    <script src="/static/app.js?v=overview-20260918"></script>
+    <script src="/static/theme.js?v=overview-20260918"></script>
   </body>
 </html>

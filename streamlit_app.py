@@ -1231,7 +1231,7 @@ def framework_page() -> None:
         <div class="nf-panel">
         <h3>Market Data</h3>
         <p class="nf-help">
-        NightFall Alpha stores normalized daily OHLCV bars in <code>data/processed/prices.csv</code>.
+        NightFall Alpha stores normalized daily OHLCV bars in <code>data/processed/prices.parquet</code>.
         The Streamlit deployment does not include your local cache, so refreshes happen inside the app runtime.
         Yahoo Finance is the default source, Yahoo Max requests the longest available Yahoo history, and Stooq
         can provide longer free daily history when automated access is accepted by the provider. The S&P 500
