@@ -2204,7 +2204,12 @@ function renderInteractiveChart(elementId, rows, columns, options = {}) {
       emphasis: { focus: "series" },
       connectNulls: false,
       data: rows.map((row) => {
-        const value = Number(row[column]);
+        // JSON nulls are gaps in the series (e.g. a benchmark that did not
+        // exist yet) — never coerce them through Number(), since Number(null)
+        // is 0 and would draw a fake flat zero line.
+        const raw = row[column];
+        if (raw === null || raw === undefined || raw === "") return null;
+        const value = Number(raw);
         return Number.isFinite(value) ? value : null;
       }),
     })),

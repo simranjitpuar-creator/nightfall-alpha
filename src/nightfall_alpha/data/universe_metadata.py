@@ -29,10 +29,15 @@ def _metadata_path(settings: Settings) -> Path:
 
 
 def _price_symbols(settings: Settings) -> list[str]:
-    path = settings.project.data_dir / "processed" / "prices.csv"
-    if not path.exists():
+    processed = settings.project.data_dir / "processed"
+    parquet_path = processed / "prices.parquet"
+    csv_path = processed / "prices.csv"
+    if parquet_path.exists():
+        prices = pd.read_parquet(parquet_path, columns=["symbol"])
+    elif csv_path.exists():
+        prices = pd.read_csv(csv_path, usecols=["symbol"])
+    else:
         return []
-    prices = pd.read_csv(path, usecols=["symbol"])
     return sorted(prices["symbol"].dropna().map(normalize_symbol).unique().tolist())
 
 

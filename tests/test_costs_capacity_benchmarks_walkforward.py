@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -8,7 +9,8 @@ import pandas as pd
 from nightfall_alpha.backtest.costs import COST_MODELS, CostModel, parse_cost_eras
 from nightfall_alpha.backtest.engine import BacktestConfig, run_overnight_backtest
 from nightfall_alpha.backtest.walkforward import WalkForwardConfig, run_walk_forward
-from nightfall_alpha.data.benchmarks import relative_metrics
+from nightfall_alpha.data import benchmarks as benchmarks_module
+from nightfall_alpha.data.benchmarks import BenchmarkSeries, benchmark_comparison, relative_metrics
 from nightfall_alpha.data.membership import apply_membership, load_membership, membership_summary
 from nightfall_alpha.data.synthetic import SyntheticMarketConfig, generate_synthetic_ohlcv
 
@@ -182,6 +184,31 @@ class TestBenchmarkMetrics(unittest.TestCase):
         strategy = pd.Series(np.full(10, 0.001), index=pd.date_range("2020-01-01", periods=10, freq="B"))
         benchmark = pd.Series(np.full(10, 0.001), index=pd.date_range("2020-01-01", periods=10, freq="B"))
         self.assertEqual(relative_metrics(strategy, benchmark), {})
+
+    def test_curves_clip_to_strategy_window_and_rebase(self):
+        # Strategy lives 2020-2021; benchmark history runs 2010-2026.
+        strategy_dates = pd.date_range("2020-01-01", "2021-12-31", freq="B")
+        benchmark_dates = pd.date_range("2010-01-01", "2026-12-31", freq="B")
+        strategy = pd.Series(np.full(len(strategy_dates), 0.0005), index=strategy_dates)
+        benchmark = pd.Series(np.full(len(benchmark_dates), 0.0003), index=benchmark_dates)
+
+        def fake_load(key, data_dir, *, refresh=False, start="1900-01-01"):
+            return BenchmarkSeries(key=key, name=key, returns=benchmark)
+
+        with unittest.mock.patch.object(benchmarks_module, "load_benchmark", side_effect=fake_load):
+            table, curves = benchmark_comparison(strategy, Path("unused"), ["SP500"])
+
+        self.assertFalse(table.empty)
+        self.assertIn("strategy", curves.columns)
+        self.assertIn("SP500", curves.columns)
+        # X-axis starts at the strategy window, not the benchmark's 2010 inception.
+        self.assertGreaterEqual(curves.index.min(), strategy_dates.min())
+        self.assertLessEqual(curves.index.max(), strategy_dates.max())
+        # Both series start at exactly 1.0 (growth of $1 baseline).
+        self.assertAlmostEqual(curves["strategy"].dropna().iloc[0], 1.0, places=9)
+        self.assertAlmostEqual(curves["SP500"].dropna().iloc[0], 1.0, places=9)
+        # No zero-filled rows anywhere.
+        self.assertTrue((curves.dropna(how="all").fillna(1.0) != 0.0).all().all())
 
 
 class TestWalkForward(unittest.TestCase):

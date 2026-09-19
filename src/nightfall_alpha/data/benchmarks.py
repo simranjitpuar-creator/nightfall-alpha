@@ -198,7 +198,17 @@ def benchmark_comparison(
     curves: dict[str, pd.Series] = {}
     strategy = strategy_returns.dropna().sort_index()
     strategy = strategy[~strategy.index.duplicated(keep="last")]
-    curves["strategy"] = (1.0 + strategy).cumprod()
+    if strategy.empty:
+        return pd.DataFrame(rows), pd.DataFrame()
+
+    # Curves are clipped to the strategy's live window and rebased to exactly
+    # 1.0 at each series' first in-window date. Benchmarks with longer history
+    # (e.g. the S&P 500 back to 1928) no longer stretch the chart's x-axis, and
+    # dates without data stay NaN so the chart renders gaps, not zeros.
+    window_start, window_end = strategy.index.min(), strategy.index.max()
+
+    strategy_curve = (1.0 + strategy).cumprod()
+    curves["strategy"] = strategy_curve / strategy_curve.iloc[0]
 
     for key in keys:
         try:
@@ -209,7 +219,14 @@ def benchmark_comparison(
         if not metrics:
             continue
         rows.append({"key": key, "benchmark": series.name, **metrics})
-        curves[key] = (1.0 + series.returns[~series.returns.index.duplicated(keep="last")]).cumprod()
+        benchmark_returns = series.returns[~series.returns.index.duplicated(keep="last")].sort_index()
+        benchmark_curve = (1.0 + benchmark_returns).cumprod()
+        benchmark_curve = benchmark_curve[
+            (benchmark_curve.index >= window_start) & (benchmark_curve.index <= window_end)
+        ]
+        if benchmark_curve.empty:
+            continue
+        curves[key] = benchmark_curve / benchmark_curve.iloc[0]
 
     aligned = pd.DataFrame(curves).dropna(how="all")
     return pd.DataFrame(rows), aligned
