@@ -6,6 +6,7 @@ const state = {
   tradeSummary: null,
   builder: null,
   universe: [],
+  eraStudyLoaded: false,
   curves: {
     range: "full",
     hoverIndex: null,
@@ -1025,6 +1026,7 @@ const TAB_TITLES = {
   evaluation: "Evaluation",
   portfolio: "Portfolio Research",
   trades: "Trade Blotter",
+  findings: "Research Findings",
   system: "System",
 };
 
@@ -1059,6 +1061,9 @@ function activateTab(tab) {
   if (title && TAB_TITLES[tab]) title.textContent = TAB_TITLES[tab];
   if (tab === "signal") {
     window.requestAnimationFrame(renderCurves);
+  }
+  if (tab === "findings" && !state.eraStudyLoaded) {
+    loadEraStudy().catch((error) => toast(error.message));
   }
   window.requestAnimationFrame(resizeInteractiveCharts);
 }
@@ -2680,3 +2685,187 @@ loadDashboard()
     document.getElementById("builderStatus").textContent = "Ready";
   })
   .catch((error) => toast(error.message));
+
+// ===================== RESEARCH FINDINGS: ERA STUDY =====================
+function eraSurvivalCell(milestone) {
+  if (!milestone) return '<span class="gain">never</span>';
+  return `<span class="loss">${milestone.date} (${milestone.months} mo)</span>`;
+}
+
+function renderEraStudy(study) {
+  if (!study) return;
+  const eras = (study.eras || []).filter((era) => !era.empty);
+  const meta = document.getElementById("eraStudyMeta");
+  if (meta) {
+    const windowText = study.data_window ? `${study.data_window.start} → ${study.data_window.end}` : "";
+    meta.textContent = `Generated ${study.generated_at || "-"} | ${windowText} | initial stake $${formatNumber(study.initial_capital || 0, 0)} per era | strategy defaults: ${study.strategy?.lookback_days}D lookback, top ${study.strategy?.top_n}`;
+  }
+
+  const costBody = document.getElementById("eraCostBody");
+  if (costBody) {
+    costBody.innerHTML = "";
+    eras.forEach((era) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${era.name}</td>
+        <td>${era.start} → ${era.end}</td>
+        <td>${formatNumber(era.fees_bps, 1)}</td>
+        <td>${formatNumber(era.slippage_bps, 1)}</td>
+        <td><strong>${formatNumber(era.cost_bps_per_side, 1)} bps</strong></td>
+        <td>≈ ${formatNumber(era.cost_bps_per_side * 2, 0)} bps</td>
+        <td class="subtle">${era.key === "1900-01-01" ? "Pre-May Day fixed rates" : era.name}</td>
+      `;
+      costBody.appendChild(tr);
+    });
+  }
+
+  const body = document.getElementById("eraStudyBody");
+  if (body) {
+    body.innerHTML = "";
+    eras.forEach((era) => {
+      const netClass = era.net_total_return > 0 ? "gain" : "loss";
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${era.name}</td>
+        <td>${era.start} → ${era.end}</td>
+        <td>${formatNumber(era.cost_bps_per_side, 1)} bps</td>
+        <td class="gain">${formatPct(era.gross_total_return)}</td>
+        <td class="${netClass}">${era.net_total_return <= -0.9999 ? "wipeout" : formatPct(era.net_total_return)}</td>
+        <td class="${netClass}">${era.net_cagr == null ? "—" : formatPct(era.net_cagr)}</td>
+        <td>${era.net_sharpe == null ? "—" : formatNumber(era.net_sharpe)}</td>
+        <td class="loss">${formatPct(era.net_max_drawdown)}</td>
+        <td>${eraSurvivalCell(era.halved)}</td>
+        <td>${eraSurvivalCell(era.ruined)}</td>
+        <td><strong>${era.verdict}</strong></td>
+      `;
+      body.appendChild(tr);
+    });
+  }
+
+  const conclusion = document.getElementById("eraStudyConclusion");
+  if (conclusion && study.conclusion) {
+    const c = study.conclusion;
+    const wipeouts = eras.filter((era) => era.ruined).length;
+    const survivors = eras.filter((era) => era.net_total_return > 0);
+    const fastest = eras.filter((era) => era.ruined).sort((a, b) => a.ruined.months - b.ruined.months)[0];
+    const grossNote = c.gross_edge_all_eras
+      ? "The raw overnight edge — before any costs — was positive in every single era tested. The signal itself was never the problem."
+      : "The gross edge was not positive in every era, so the signal itself was uneven across history.";
+    const survivalNote = c.first_profitable_era
+      ? `The edge first survives its costs in the <strong>${c.first_profitable_era}</strong> era (from ${c.first_profitable_start}). ${survivors.map((s) => `${s.name}: ${formatPct(s.net_cagr)} CAGR, Sharpe ${formatNumber(s.net_sharpe)}`).join("; ")}.`
+      : "The edge never survives its costs in any tested era.";
+    const wipeoutNote = fastest
+      ? ` In the earliest eras the stake dies fast: at 90 bps per side, $10,000 was halved in under 2 months and 90% gone in about half a year (${fastest.name}: ruined ${fastest.ruined.date}, ${fastest.ruined.months} months).`
+      : "";
+    conclusion.innerHTML = `
+      <p><strong>What the study shows.</strong> ${grossNote} Costs decide everything.</p>
+      <p><strong>Era by era.</strong> ${wipeouts} of ${eras.length} eras end in effective ruin (90%+ loss).${wipeoutNote}
+      Through the 1997–2001 and decimalization eras the bleed slows — 20 then 10 bps per side still grinds the stake down, just over years instead of months.</p>
+      <p><strong>Where it starts working.</strong> ${survivalNote}</p>
+      <p><strong>The lesson.</strong> This strategy is not a 1960s strategy, a 1980s strategy, or a 1990s strategy — it is a product of modern
+      market structure. Its entire existence depends on sub-penny spreads and near-zero commissions, and its capacity is bounded by the same
+      overnight liquidity that makes those costs possible. Backtested at any earlier era's prices, the same signals would not have made a
+      fortune slowly; they would have lost one quickly.</p>
+      <p class="subtle">This is a research finding about cost structure, not investment advice. Era rates are approximations — override them in config/settings.yml and rerun to test sensitivity.</p>
+    `;
+  }
+
+  const status = document.getElementById("eraStudyStatus");
+  if (status) status.textContent = `${eras.length} eras tested`;
+  state.eraStudyLoaded = true;
+  renderEraStudyChart(eras);
+}
+
+function renderEraStudyChart(eras) {
+  const el = document.getElementById("eraStudyChart");
+  if (!el || typeof echarts === "undefined") return;
+  let entry = interactiveCharts.get("eraStudyChart");
+  if (!entry) {
+    entry = { chart: echarts.init(el, null, { renderer: "canvas" }), rows: [], columns: [], options: {} };
+    interactiveCharts.set("eraStudyChart", entry);
+  }
+  const colors = chartThemeColors();
+  const labels = eras.map((era) => era.name);
+  const netValues = eras.map((era) => (era.net_cagr == null ? -100 : era.net_cagr * 100));
+  const grossValues = eras.map((era) => (era.gross_cagr == null ? null : era.gross_cagr * 100));
+  entry.chart.setOption({
+    backgroundColor: "transparent",
+    animationDuration: 400,
+    grid: { left: 64, right: 24, top: 44, bottom: 90 },
+    legend: {
+      top: 4,
+      icon: "roundRect",
+      itemWidth: 14,
+      itemHeight: 4,
+      textStyle: { color: colors.muted, fontSize: 12 },
+    },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      backgroundColor: "rgba(10, 14, 26, 0.92)",
+      borderColor: colors.border,
+      textStyle: { color: "#e9eef8", fontSize: 12 },
+      valueFormatter: (value) => (value === null || value === undefined ? "—" : `${formatNumber(value, 1)}%`),
+    },
+    xAxis: {
+      type: "category",
+      data: labels,
+      axisLabel: { color: colors.muted, fontSize: 11, interval: 0, rotate: 24 },
+      axisLine: { lineStyle: { color: colors.border } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: colors.muted, fontSize: 11, formatter: (value) => `${value}%` },
+      splitLine: { lineStyle: { color: colors.border } },
+    },
+    series: [
+      {
+        name: "Gross CAGR (before costs)",
+        type: "bar",
+        data: grossValues,
+        itemStyle: { color: "rgba(167, 139, 250, 0.55)", borderRadius: [4, 4, 0, 0] },
+      },
+      {
+        name: "Net CAGR (after era costs)",
+        type: "bar",
+        data: netValues.map((value) => ({
+          value,
+          itemStyle: { color: value >= 0 ? "#34d399" : "#fb7185", borderRadius: [4, 4, 0, 0] },
+        })),
+      },
+    ],
+  }, true);
+}
+
+async function loadEraStudy() {
+  const status = document.getElementById("eraStudyStatus");
+  const result = await fetchJson("/api/era-study");
+  if (result.status !== "ok") {
+    if (status) status.textContent = "Not run yet";
+    return;
+  }
+  renderEraStudy(result.study);
+}
+
+async function runEraStudy() {
+  const button = document.getElementById("eraStudyButton");
+  const status = document.getElementById("eraStudyStatus");
+  button.disabled = true;
+  if (status) status.textContent = "Running";
+  startTaskProgress("taskProgress", "Running era study (full backtest, ~1 min)...");
+  try {
+    const result = await fetchJson("/api/era-study/run", { method: "POST" });
+    renderEraStudy(result.study);
+    finishTaskProgress("taskProgress", "Era study complete");
+    toast("Era study complete");
+  } catch (error) {
+    if (status) status.textContent = "Failed";
+    finishTaskProgress("taskProgress", "Era study failed", true);
+    toast(`Era study failed: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById("eraStudyButton")?.addEventListener("click", runEraStudy);

@@ -102,6 +102,10 @@ The Benchmarks dashboard tab (or `nightfall-alpha benchmarks`) compares the stra
 
 The Walk-Forward tab (or `nightfall-alpha walkforward`) replaces the in-sample parameter choice with rolling out-of-sample evaluation: for each fold, the parameter grid (lookback, top-N, min-signal) is scored on a training window, frozen, and then measured on the following unseen test window. The stitched OOS equity curve and the in-sample vs out-of-sample Sharpe decay are the honest headline numbers for the strategy.
 
+## Era cost survival study
+
+The dashboard's Research Findings tab runs the era study (also importable as `nightfall_alpha.research.era_study.run_era_study`): one full backtest with the historical cost model, sliced era by era. Each era starts a fresh $10,000 stake and reports gross vs net return, net CAGR/Sharpe/max drawdown, and survival milestones (when the stake halves and when 90% is gone). The headline finding on the current cache: the gross overnight edge is positive in every era since 1962, but it only survives transaction costs from the Reg NMS era (2007+) onward — at 1960s–1990s cost levels the same signals ruin the stake within months. Results persist to `data/reports/era_study.json`.
+
 ```powershell
 .\.venv\Scripts\python.exe -m nightfall_alpha.cli walkforward --start-date 2015-01-01 --cost-model historical
 .\.venv\Scripts\python.exe -m nightfall_alpha.cli backtest --cost-model historical --capital-capacity 250000000 --max-adv-participation 0.05

@@ -28,6 +28,7 @@ from nightfall_alpha.data.pipeline import (
 from nightfall_alpha.data.universe_metadata import load_universe_metadata
 from nightfall_alpha.portfolio.builder import PortfolioBuildSpec, build_custom_portfolio, parse_symbols
 from nightfall_alpha.portfolio.optimizers import OptimizerSuiteSettings
+from nightfall_alpha.research.era_study import load_era_study, run_era_study
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -474,6 +475,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "cached_rows": _records(cached),
             "sectors": sorted(frame["sector_code"].dropna().unique().tolist()),
         }
+
+    @app.get("/api/era-study")
+    def era_study() -> dict[str, Any]:
+        study = load_era_study(cfg.project.data_dir)
+        if study is None:
+            return {"status": "empty", "detail": "No era study has been run yet. Press Run Era Study."}
+        return {"status": "ok", "study": study}
+
+    @app.post("/api/era-study/run")
+    def run_era_study_endpoint() -> dict[str, Any]:
+        try:
+            study = run_era_study(cfg)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "ok", "study": study}
 
     @app.post("/api/run")
     def rerun(request: SignalBacktestRequest = Body(default_factory=SignalBacktestRequest)) -> dict[str, Any]:
