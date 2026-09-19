@@ -886,6 +886,8 @@ function activateSubpanel(tab, sub) {
   document
     .querySelectorAll(`[data-tab-panel="${tab}"] .subnav-item`)
     .forEach((button) => button.classList.toggle("active", button.dataset.subtab === sub));
+  // Charts living in a freshly shown panel were sized while hidden; repaint them.
+  window.requestAnimationFrame(resizeInteractiveCharts);
 }
 
 function activateTab(tab) {
@@ -903,6 +905,7 @@ function activateTab(tab) {
   if (tab === "signal") {
     window.requestAnimationFrame(renderCurves);
   }
+  window.requestAnimationFrame(resizeInteractiveCharts);
 }
 
 function setNumberInput(id, value) {
@@ -2098,65 +2101,127 @@ function syncLookbackMode() {
 
 const SERIES_PALETTE = ["#22d3ee", "#a78bfa", "#f59e0b", "#34d399", "#fb7185", "#f472b6"];
 
-function drawMultiLineChart(canvasId, rows, columns, title) {
-  const { context, width, height } = getCanvasContext(canvasId);
-  context.clearRect(0, 0, width, height);
+// ===================== INTERACTIVE CHARTS (ECharts) =====================
+// Registry keeps the last payload per chart so theme switches and tab
+// visibility changes can re-render without refetching.
+const interactiveCharts = new Map();
+
+function chartThemeColors() {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    text: styles.getPropertyValue("--text").trim() || "#e9eef8",
+    muted: styles.getPropertyValue("--muted").trim() || "#8a94ac",
+    border: styles.getPropertyValue("--glass-border").trim() || "rgba(255,255,255,0.09)",
+  };
+}
+
+function renderInteractiveChart(elementId, rows, columns, options = {}) {
+  const el = document.getElementById(elementId);
+  if (!el || typeof echarts === "undefined") return;
+  let entry = interactiveCharts.get(elementId);
+  if (!entry) {
+    entry = { chart: echarts.init(el, null, { renderer: "canvas" }), rows: [], columns: [], options: {} };
+    interactiveCharts.set(elementId, entry);
+  }
+  entry.rows = rows;
+  entry.columns = columns;
+  entry.options = options;
+
+  const colors = chartThemeColors();
+  const palette = columns.map((_, index) => SERIES_PALETTE[index % SERIES_PALETTE.length]);
+  const yFormatter = options.yFormatter || ((value) => formatNumber(value, 2));
+
   if (!rows.length || !columns.length) {
-    drawEmptyChart(context, width, height, title);
+    entry.chart.setOption({
+      backgroundColor: "transparent",
+      title: {
+        text: options.emptyText || "Run to load data",
+        left: "center",
+        top: "center",
+        textStyle: { color: colors.muted, fontSize: 13, fontWeight: 500 },
+      },
+      xAxis: { show: false },
+      yAxis: { show: false },
+      series: [],
+    }, true);
     return;
   }
-  const allValues = [];
-  rows.forEach((row) => {
-    columns.forEach((column) => {
-      const value = Number(row[column]);
-      if (Number.isFinite(value)) allValues.push(value);
-    });
-  });
-  if (!allValues.length) {
-    drawEmptyChart(context, width, height, title);
-    return;
-  }
-  const { min, max } = expandBounds(allValues);
-  const area = drawChartAxes(context, rows, {
-    width,
-    height,
-    title,
-    xLabel: "Date",
-    yLabel: "Growth of $1",
-    min,
-    max,
-    formatY: (value) => `$${formatNumber(value, 2)}`,
-  });
-  columns.forEach((column, seriesIndex) => {
-    context.beginPath();
-    context.strokeStyle = SERIES_PALETTE[seriesIndex % SERIES_PALETTE.length];
-    context.lineWidth = 2;
-    let started = false;
-    rows.forEach((row, index) => {
-      const value = Number(row[column]);
-      if (!Number.isFinite(value)) return;
-      const x = xForIndex(index, rows, area);
-      const y = yForValue(value, min, max, area);
-      if (!started) {
-        context.moveTo(x, y);
-        started = true;
-      } else {
-        context.lineTo(x, y);
-      }
-    });
-    context.stroke();
-  });
-  // Legend
-  context.font = `12px ${CHART_FONT}`;
-  let legendX = area.left + 8;
-  columns.forEach((column, seriesIndex) => {
-    context.fillStyle = SERIES_PALETTE[seriesIndex % SERIES_PALETTE.length];
-    context.fillRect(legendX, area.top - 18, 10, 10);
-    context.fillStyle = chartColors().text;
-    context.fillText(column, legendX + 14, area.top - 9);
-    legendX += context.measureText(column).width + 34;
+
+  entry.chart.setOption({
+    backgroundColor: "transparent",
+    color: palette,
+    animationDuration: 400,
+    grid: { left: 64, right: 24, top: 44, bottom: 66 },
+    legend: {
+      top: 4,
+      icon: "roundRect",
+      itemWidth: 14,
+      itemHeight: 4,
+      textStyle: { color: colors.muted, fontSize: 12 },
+      inactiveColor: colors.border,
+    },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "line", lineStyle: { color: colors.muted } },
+      backgroundColor: "rgba(10, 14, 26, 0.92)",
+      borderColor: colors.border,
+      textStyle: { color: "#e9eef8", fontSize: 12 },
+      valueFormatter: (value) => (value === null || value === undefined ? "-" : yFormatter(value)),
+    },
+    xAxis: {
+      type: "category",
+      data: rows.map((row) => row.date),
+      axisLabel: { color: colors.muted, fontSize: 11 },
+      axisLine: { lineStyle: { color: colors.border } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: "value",
+      scale: true,
+      axisLabel: { color: colors.muted, fontSize: 11, formatter: yFormatter },
+      splitLine: { lineStyle: { color: colors.border } },
+    },
+    dataZoom: [
+      { type: "inside", throttle: 50 },
+      {
+        type: "slider",
+        height: 20,
+        bottom: 10,
+        borderColor: colors.border,
+        backgroundColor: "transparent",
+        fillerColor: "rgba(99, 102, 241, 0.18)",
+        handleStyle: { color: colors.muted },
+        moveHandleStyle: { color: colors.muted },
+        textStyle: { color: colors.muted, fontSize: 10 },
+        dataBackground: { lineStyle: { color: colors.border }, areaStyle: { color: "transparent" } },
+      },
+    ],
+    series: columns.map((column) => ({
+      name: column,
+      type: "line",
+      showSymbol: false,
+      lineStyle: { width: 2 },
+      emphasis: { focus: "series" },
+      connectNulls: false,
+      data: rows.map((row) => {
+        const value = Number(row[column]);
+        return Number.isFinite(value) ? value : null;
+      }),
+    })),
+  }, true);
+}
+
+function resizeInteractiveCharts() {
+  interactiveCharts.forEach((entry) => entry.chart.resize());
+}
+
+// Re-render with fresh theme colors (called by theme.js after palette changes).
+function rethemeInteractiveCharts() {
+  interactiveCharts.forEach((entry, elementId) => {
+    renderInteractiveChart(elementId, entry.rows, entry.columns, entry.options);
   });
 }
+window.rethemeInteractiveCharts = rethemeInteractiveCharts;
 
 async function loadBenchmarks(event) {
   if (event) event.preventDefault();
@@ -2197,7 +2262,10 @@ async function loadBenchmarks(event) {
     const columns = curves.length
       ? Object.keys(curves[0]).filter((key) => key !== "date")
       : [];
-    drawMultiLineChart("benchmarkChart", curves, columns, "Strategy vs Benchmarks");
+    renderInteractiveChart("benchmarkChart", curves, columns, {
+      yFormatter: (value) => `$${formatNumber(value, 2)}`,
+      emptyText: "Run a benchmark comparison to load curves",
+    });
     status.textContent = `${(result.summary || []).length} benchmarks`;
     if ((result.unknown_keys || []).length) {
       toast(`Unknown benchmark keys ignored: ${result.unknown_keys.join(", ")}`);
@@ -2276,7 +2344,10 @@ async function runWalkforward(event) {
       `;
       body.appendChild(tr);
     });
-    drawMultiLineChart("walkforwardChart", result.oos_curve || [], ["equity"], "Stitched Out-of-Sample Equity");
+    renderInteractiveChart("walkforwardChart", result.oos_curve || [], ["equity"], {
+      yFormatter: (value) => formatCompactMoney(value) || formatMoney(value),
+      emptyText: "Run walk-forward to load the out-of-sample curve",
+    });
     status.textContent = `${(result.folds || []).length} folds`;
     finishTaskProgress("taskProgress", "Walk-forward complete");
     toast("Walk-forward complete");
@@ -2387,6 +2458,7 @@ document.querySelectorAll(".curve-toolbar [data-range]").forEach((button) => {
 });
 window.addEventListener("resize", () => {
   renderCurves();
+  resizeInteractiveCharts();
 });
 
 loadDashboard()

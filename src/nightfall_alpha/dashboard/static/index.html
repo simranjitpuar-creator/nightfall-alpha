@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=declutter-20260916" />
+    <link rel="stylesheet" href="/static/styles.css?v=echarts-20260918" />
     <script>
       // Apply persisted theme + custom palette before first paint (no flash).
       (function () {
@@ -391,7 +391,7 @@
                 <span class="subtle">common trading dates only</span>
               </div>
               <div class="curve-window">
-                <canvas id="benchmarkChart" height="320" aria-label="Strategy vs benchmark growth"></canvas>
+                <div id="benchmarkChart" class="echart" role="img" aria-label="Strategy vs benchmark growth"></div>
               </div>
             </section>
 
@@ -476,7 +476,7 @@
                 <span class="subtle">parameters re-fit on each training window</span>
               </div>
               <div class="curve-window">
-                <canvas id="walkforwardChart" height="320" aria-label="Out-of-sample equity curve"></canvas>
+                <div id="walkforwardChart" class="echart" role="img" aria-label="Out-of-sample equity curve"></div>
               </div>
             </section>
 
@@ -1220,7 +1220,8 @@
     </div>
 
     <div id="toast" role="status" aria-live="polite"></div>
-    <script src="/static/app.js?v=declutter-20260916"></script>
-    <script src="/static/theme.js?v=declutter-20260916"></script>
+    <script src="/static/vendor/echarts.min.js?v=5.5.1"></script>
+    <script src="/static/app.js?v=echarts-20260918"></script>
+    <script src="/static/theme.js?v=echarts-20260918"></script>
   </body>
 </html>

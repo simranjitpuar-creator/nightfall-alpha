@@ -70,6 +70,9 @@
     if (typeof window.renderCurves === "function") {
       window.requestAnimationFrame(() => window.renderCurves());
     }
+    if (typeof window.rethemeInteractiveCharts === "function") {
+      window.requestAnimationFrame(() => window.rethemeInteractiveCharts());
+    }
   }
 
   function applyAll() {
