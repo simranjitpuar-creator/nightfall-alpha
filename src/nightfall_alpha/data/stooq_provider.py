@@ -93,21 +93,29 @@ def download_stooq_daily_prices(
     StooqDailyReader = _import_stooq_reader()
     frames: list[pd.DataFrame] = []
     returned: list[str] = []
+    errors: list[str] = []
     end_date = pd.Timestamp(end) if end is not None else pd.Timestamp.today().normalize()
 
     for symbol in requested:
         try:
             raw = StooqDailyReader(symbols=stooq_symbol(symbol), start=start, end=end_date).read()
-        except Exception:
+        except Exception as exc:
+            errors.append(f"{symbol}: {type(exc).__name__} {exc}")
             continue
         normalized = _normalize_stooq_frame(raw, symbol)
         if normalized.empty:
+            errors.append(f"{symbol}: empty response (Stooq may be serving a browser-verification page)")
             continue
         frames.append(normalized)
         returned.append(symbol)
 
     if not frames:
-        raise StooqProviderError("Stooq returned no price rows.")
+        detail = "; ".join(errors[:3]) if errors else "no symbols returned data"
+        raise StooqProviderError(
+            f"Stooq returned no price rows ({detail}). Stooq currently presents an anti-bot browser check "
+            "to non-browser clients, so downloads can fail even for valid tickers. "
+            "Use Yahoo Finance, Yahoo Max, or Tiingo instead."
+        )
 
     prices = validate_prices_frame(pd.concat(frames, ignore_index=True))
     returned = sorted(prices["symbol"].unique().tolist())
