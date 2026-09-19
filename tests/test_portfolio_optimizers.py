@@ -5,6 +5,8 @@ import pandas as pd
 
 from nightfall_alpha.portfolio.optimizers import (
     OptimizerSuiteSettings,
+    _daily_drift_matrix,
+    _per_stock_cost_rates,
     build_portfolio_suite,
     build_rebalanced_portfolio_suite,
     portfolio_metric_details,
@@ -177,6 +179,46 @@ class PortfolioOptimizerTests(unittest.TestCase):
         )
         allocation_only_cost = 1.0 * 10.0 / 10_000.0  # gross exposure × per-side rate
         self.assertGreater(float(details["total_cost_return"]), allocation_only_cost * 1.2)
+
+    def test_per_stock_cost_rates_scale_slippage_by_volatility(self) -> None:
+        returns = pd.DataFrame(
+            {
+                "CALM": np.full(60, 0.0005),
+                "JUMPY": np.sin(np.arange(60, dtype=float)) * 0.03,
+            },
+            index=pd.bdate_range("2024-01-01", periods=60),
+        )
+        rates = _per_stock_cost_rates(returns, fees_bps=5.0, slippage_bps=10.0)
+        # Volatile names pay more slippage than calm names.
+        self.assertGreater(rates["JUMPY"], rates["CALM"])
+        # Fees are uniform: the fee floor is identical for both.
+        self.assertGreaterEqual(rates["CALM"], 5.0 / 10_000.0)
+        # Slippage multiplier is clipped at 4x the cross-sectional mean.
+        self.assertLessEqual(rates["JUMPY"], (5.0 + 10.0 * 4.0) / 10_000.0 + 1e-12)
+
+    def test_drift_costs_bill_each_stock_at_its_own_rate(self) -> None:
+        alternating = np.where(np.arange(40) % 2 == 0, 0.02, -0.02)
+        returns = pd.DataFrame(
+            {"CALM": np.sin(np.arange(40, dtype=float)) * 0.0002, "JUMPY": alternating},
+            index=pd.bdate_range("2024-01-01", periods=40),
+        )
+        weights = pd.Series({"CALM": 0.5, "JUMPY": 0.5})
+        details = portfolio_metric_details(
+            weights,
+            returns,
+            initial_capital=100_000.0,
+            fees_bps=5.0,
+            slippage_bps=10.0,
+        )
+        rates = _per_stock_cost_rates(returns, 5.0, 10.0)
+        drift = _daily_drift_matrix(returns, weights)
+        expected = float((weights.abs() * rates).sum() + (drift * rates).sum().sum())
+        self.assertAlmostEqual(float(details["total_cost_return"]), expected, places=10)
+        # Per-stock billing exceeds a naive uniform-rate bill because the
+        # turnover is concentrated in the more expensive name.
+        uniform = (5.0 + 10.0) / 10_000.0
+        uniform_cost = float(weights.abs().sum() * uniform + drift.sum().sum() * uniform)
+        self.assertGreater(float(details["total_cost_return"]), uniform_cost)
 
     def test_portfolio_suite_accepts_method_specific_parameters(self) -> None:
         returns = pd.DataFrame(

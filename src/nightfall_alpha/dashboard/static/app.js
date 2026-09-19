@@ -402,11 +402,11 @@ Details: Use Overnight when the portfolio is meant to express the overnight effe
 Model impact: This scales Initial Equity, Ending Equity, and dollar-based equity metrics for each optimized portfolio. It does not change percentage returns, Sharpe, Sortino, Calmar, VaR percentage, CVaR percentage, or optimizer weights.
 Details: Use the same capital base as the Signal Backtest if you want dollar results to compare cleanly across tabs.`,
   builderFeesBps: `Description: Explicit trading fee assumption for Portfolio Research, measured in basis points per side.
-Model impact: Higher fees reduce net portfolio returns through initial allocation turnover and any rebalance turnover.
-Details: Unlike Signal Backtest, Portfolio Research does not assume the whole portfolio is liquidated every night. It charges allocation/rebalance turnover.`,
+Model impact: Higher fees reduce net portfolio returns through allocation, rebalance, and daily drift-rebalancing turnover.
+Details: Fees are uniform per trade — every stock pays the same fee rate. Slippage, by contrast, is scaled per stock: volatile names pay more, calm names less.`,
   builderSlippageBps: `Description: Execution slippage assumption for Portfolio Research, measured in basis points per side.
-Model impact: Higher slippage lowers net optimizer performance, especially for monthly rebalanced portfolios with high turnover.
-Details: Static portfolios pay this only on the initial allocation. Rebalanced portfolios pay it when target weights change.`,
+Model impact: Higher slippage lowers net optimizer performance, especially for high-turnover or high-volatility books.
+Details: This is the average rate: each stock's actual slippage is scaled by its relative daily volatility (0.25x to 4x the cross-sectional mean), so jumpy names cost more to trade than calm ones. Charged on the initial allocation, rebalance turnover, and daily drift rebalancing.`,
   maxWeight: `Description: Default maximum weight any one stock can receive in the portfolio optimizer suite.
 Model impact: This is the cap used by every optimizer unless that optimizer has its own cap override below. Lower caps reduce concentration and can leave more capital in Cash when the usable universe is small.
 Details: Enter as a decimal, so 0.01 means 1 percent. The Cap, Invested, Cash, and Max Weight columns show how the constraint was applied.`,
@@ -610,7 +610,7 @@ Model impact: Output only. It is a deeper tail-risk estimate than VaR.
 Details: CVaR Aware uses this tail-risk idea when selecting weights.`,
   "Cost Drag": `Description: Sum of modeled transaction cost returns over the test window.
 Model impact: Higher fees, slippage, exposure, or turnover increase this value and reduce net returns.
-Details: Signal Backtest charges daily overnight round trips. Portfolio Research charges the initial allocation, rebalance turnover, and the daily drift-rebalancing implied by holding fixed weights against moving prices.`,
+Details: Signal Backtest charges daily overnight round trips. Portfolio Research charges the initial allocation, rebalance turnover, and the daily drift-rebalancing implied by holding fixed weights against moving prices — each stock billed at its own volatility-scaled rate.`,
   Invested: `Description: Sum of portfolio weights actually deployed.
 Model impact: Lower max-weight caps can make this less than 100 percent, leaving the rest in cash.
 Details: This is why a 1 percent max weight across 8 names invests up to 8 percent and leaves roughly 92 percent cash.`,

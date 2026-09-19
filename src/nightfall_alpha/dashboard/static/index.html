@@ -1331,12 +1331,15 @@
                 <h3>Portfolio Cost Formula</h3>
                 <p>
                   Portfolio Research models costs as allocation turnover, not as a daily overnight liquidation book.
-                  The per-side rate is <code>(Fees Bps + Slippage Bps) / 10000</code>.
+                  The per-side rate is <code>(Fees Bps + Slippage Bps) / 10000</code> <em>per stock</em>:
+                  fees are uniform across names, while each stock's slippage is scaled by its relative daily
+                  volatility (clipped to 0.25x–4x the cross-sectional mean) — volatile names cost more to trade,
+                  calm names less, and the average stock pays roughly the input rate.
                   Static portfolios pay initial allocation turnover on the first row.
                   Rebalanced portfolios pay turnover when target weights change at each rebalance.
                   Because fixed weights are applied to daily returns, every day also implies
                   <strong>drift rebalancing</strong> — trimming winners and topping up losers back to target —
-                  and those daily sales and purchases are billed at the same per-side rate.
+                  and those daily sales and purchases are billed at each stock's own per-side rate.
                   Net return is <code>gross portfolio return - turnover cost</code>.
                 </p>
 

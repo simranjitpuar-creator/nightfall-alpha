@@ -413,23 +413,54 @@ def portfolio_statistics(
     )
 
 
-def _daily_rebalance_turnover(returns: pd.DataFrame, weights: pd.Series) -> pd.Series:
-    """One-side turnover needed each day to restore target weights after drift.
+def _daily_drift_matrix(returns: pd.DataFrame, weights: pd.Series) -> pd.DataFrame:
+    """Per-stock absolute weight change needed each day to restore targets.
 
     Applying fixed weights to daily returns implies the book is rebalanced back
-    to target every day: winners are trimmed, losers topped up. Each of those
-    adjustments is a real sale or purchase and must be billed. Day 0 is left at
-    zero here because callers bill the initial allocation separately.
+    to target every day: winners are trimmed, losers topped up. Each cell is a
+    real sale or purchase in that stock and must be billed. Day 0 is zeroed
+    because callers bill the initial allocation separately.
     """
     w = weights.reindex(returns.columns).fillna(0.0).astype(float)
     portfolio_returns = returns @ w
     growth = 1.0 + portfolio_returns
     growth = growth.where(growth.abs() > 1e-12, 1e-12)
     drifted = returns.add(1.0).mul(w, axis=1).div(growth, axis=0)
-    turnover = (drifted - w).abs().sum(axis=1)
-    if not turnover.empty:
-        turnover.iloc[0] = 0.0
-    return turnover.fillna(0.0)
+    delta = (drifted - w).abs().fillna(0.0)
+    if not delta.empty:
+        delta.iloc[0] = 0.0
+    return delta
+
+
+def _daily_rebalance_turnover(returns: pd.DataFrame, weights: pd.Series) -> pd.Series:
+    """Total one-side turnover per day to restore target weights after drift."""
+    return _daily_drift_matrix(returns, weights).sum(axis=1)
+
+
+def _per_stock_cost_rates(
+    return_matrix: pd.DataFrame,
+    fees_bps: float,
+    slippage_bps: float,
+) -> pd.Series:
+    """Per-side cost rate per symbol.
+
+    Commissions/fees are uniform per trade, but slippage is not: volatile,
+    harder-to-trade names cost more to move in and out of. Slippage is scaled
+    per stock by its relative daily volatility (clipped to 0.25x-4x the
+    cross-sectional mean) so the average stock pays roughly the input bps
+    while jumpy names pay more and calm names pay less.
+    """
+    fees_rate = max(float(fees_bps), 0.0) / 10_000.0
+    slippage = max(float(slippage_bps), 0.0)
+    if slippage == 0.0 or return_matrix.empty:
+        return pd.Series(fees_rate, index=return_matrix.columns)
+    vols = return_matrix.std(ddof=0)
+    mean_vol = float(vols[vols > 0].mean()) if (vols > 0).any() else 0.0
+    if mean_vol <= 0 or not np.isfinite(mean_vol):
+        multipliers = pd.Series(1.0, index=return_matrix.columns)
+    else:
+        multipliers = (vols / mean_vol).clip(0.25, 4.0).fillna(1.0)
+    return fees_rate + (slippage / 10_000.0) * multipliers
 
 
 def portfolio_metric_details(
@@ -449,14 +480,19 @@ def portfolio_metric_details(
     equity = float(initial_capital)
     gross_exposure = float(weights.abs().sum())
     positions = int((weights.abs() > 1e-6).sum())
-    cost_per_side = max(float(fees_bps) + float(slippage_bps), 0.0) / 10_000.0
-    drift_turnover = _daily_rebalance_turnover(clean, weights)
+    drift = _daily_drift_matrix(clean, weights)
+    cost_rates = _per_stock_cost_rates(clean, fees_bps, slippage_bps)
     rows: list[dict[str, float | int | object]] = []
     for index, (date, gross_return) in enumerate(portfolio_returns.items()):
         # Day 0 bills the initial allocation; every later day bills the
         # drift-rebalancing sales/purchases that fixed-weight math implies.
-        turnover_value = gross_exposure if index == 0 else float(drift_turnover.iloc[index])
-        cost_return = turnover_value * cost_per_side
+        # Each stock's trades are billed at that stock's own cost rate.
+        if index == 0:
+            day_trades = weights.abs()
+        else:
+            day_trades = drift.iloc[index]
+        turnover_value = float(day_trades.sum())
+        cost_return = float((day_trades * cost_rates).sum())
         net_return = float(gross_return) - cost_return
         starting_equity = equity
         equity = starting_equity * (1.0 + net_return)
@@ -499,6 +535,7 @@ def _metric_details_from_returns(
     turnover: pd.Series | float = 0.0,
     fees_bps: float = 0.0,
     slippage_bps: float = 0.0,
+    cost_returns: pd.Series | None = None,
 ) -> dict[str, float | int | str | None]:
     portfolio_returns = portfolio_returns.dropna().sort_index()
     if portfolio_returns.empty:
@@ -524,7 +561,10 @@ def _metric_details_from_returns(
             if isinstance(turnover, pd.Series) and date in turnover.index
             else float(turnover)
         )
-        cost_return = turnover_value * cost_per_side
+        if cost_returns is not None and date in cost_returns.index:
+            cost_return = float(cost_returns.loc[date])
+        else:
+            cost_return = turnover_value * cost_per_side
         net_return = float(gross_return) - cost_return
         equity = starting_equity * (1.0 + net_return)
         rows.append(
@@ -724,6 +764,8 @@ def build_rebalanced_portfolio_suite(
     exposure_by_portfolio: dict[str, list[pd.Series]] = {}
     count_by_portfolio: dict[str, list[pd.Series]] = {}
     turnover_by_portfolio: dict[str, list[pd.Series]] = {}
+    cost_by_portfolio: dict[str, list[pd.Series]] = {}
+    rebalance_turnover_by_portfolio: dict[str, list[float]] = {}
     rebalance_counts: dict[str, int] = {}
     latest_weights: dict[str, pd.Series] = {}
     latest_caps: dict[str, float | None] = {}
@@ -766,14 +808,22 @@ def build_rebalanced_portfolio_suite(
             positions = int((weights.abs() > 1e-6).sum())
             # Bill the rebalance itself on day 0 of the period, then bill the
             # daily drift-rebalancing that fixed-weight math implies after that.
-            turnover = _daily_rebalance_turnover(period, weights)
+            # Every stock's trades are billed at that stock's own cost rate,
+            # estimated from the trailing history (no lookahead).
+            rates = _per_stock_cost_rates(history, fees_bps, slippage_bps)
+            drift = _daily_drift_matrix(period, weights)
+            turnover = drift.sum(axis=1)
+            cost_series = (drift * rates).sum(axis=1)
             if not turnover.empty:
                 turnover.iloc[0] = turnover_value
+                cost_series.iloc[0] = float(((weights - prior).abs() * rates).sum())
 
             returns_by_portfolio.setdefault(name, []).append(portfolio_returns)
             exposure_by_portfolio.setdefault(name, []).append(pd.Series(exposure, index=period.index, dtype=float))
             count_by_portfolio.setdefault(name, []).append(pd.Series(positions, index=period.index, dtype=float))
             turnover_by_portfolio.setdefault(name, []).append(turnover)
+            cost_by_portfolio.setdefault(name, []).append(cost_series)
+            rebalance_turnover_by_portfolio.setdefault(name, []).append(turnover_value)
             rebalance_counts[name] = rebalance_counts.get(name, 0) + 1
             previous_weights[name] = weights
             latest_weights[name] = weights.sort_values(ascending=False)
@@ -799,6 +849,7 @@ def build_rebalanced_portfolio_suite(
         exposure = pd.concat(exposure_by_portfolio[name]).sort_index()
         trade_count = pd.concat(count_by_portfolio[name]).sort_index()
         turnover = pd.concat(turnover_by_portfolio[name]).sort_index()
+        cost_returns = pd.concat(cost_by_portfolio[name]).sort_index()
         details = _metric_details_from_returns(
             portfolio_returns,
             risk_free_rate=risk_free_rate,
@@ -808,8 +859,10 @@ def build_rebalanced_portfolio_suite(
             turnover=turnover,
             fees_bps=fees_bps,
             slippage_bps=slippage_bps,
+            cost_returns=cost_returns,
         )
-        active_turnover = turnover[turnover > 0]
+        active_turnover = pd.Series(rebalance_turnover_by_portfolio.get(name, []), dtype=float)
+        active_turnover = active_turnover[active_turnover > 0]
         latest = latest_weights.get(name, pd.Series(dtype=float))
         latest_date = None
         if not weight_rows:
