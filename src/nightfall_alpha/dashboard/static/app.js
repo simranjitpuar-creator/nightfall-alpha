@@ -392,6 +392,9 @@ Details: Losers view is the fastest way to spot cost drag or systematically bad 
   tradeLimitFilter: `Description: Maximum number of table rows returned, taken from the most recent matching trades.
 Model impact: Display-only — the summary counts still reflect every matching trade.
 Details: The full filtered set (beyond this cap) is always available via Download CSV.`,
+  optimizeCandidatesButton: `Description: Sends the current overnight candidate list straight into the Portfolio Builder and runs the optimizer suite on those names.
+Model impact: The builder switches to Selected Stocks universe mode and the Overnight return model, fills the ticker field with tonight's book, and builds immediately — so the optimizer weights are estimated on the same names the signal ranks produced.
+Details: This is the bridge between the two research tracks: the signal picks the names, the optimizer sizes them. Compare the optimizer weights against the signal book's rank-based weights, and check which optimizer the app marks Best Sharpe.`,
   universeMode: `Description: Chooses whether the portfolio builder uses only typed/selected tickers or the entire locally cached universe.
 Model impact: Selected Stocks gives controlled custom portfolios. Entire Local Universe lets the optimizer search across all cached symbols, which can materially change weights and risk metrics.
 Details: Entire universe runs can take longer and depend heavily on data availability.`,
@@ -911,6 +914,7 @@ function decorateHelpTargets() {
     "downloadBuilderSummaryCsv",
     "downloadBuilderWeightsCsv",
     "downloadTradesCsv",
+    "optimizeCandidatesButton",
   ].forEach((key) => attachHelpIcon(document.getElementById(key), key));
   decoratePortfolioHeaderHelp();
 }
@@ -2884,3 +2888,21 @@ async function runEraStudy() {
 }
 
 document.getElementById("eraStudyButton")?.addEventListener("click", runEraStudy);
+
+// ===================== SIGNAL -> OPTIMIZER BRIDGE =====================
+function optimizeCurrentCandidates() {
+  const holdings = state.overview?.latest_holdings || [];
+  const symbols = [...new Set(holdings.map((row) => row.symbol).filter(Boolean))];
+  if (!symbols.length) {
+    toast("No current candidates — run the signal backtest first");
+    return;
+  }
+  document.getElementById("universeMode").value = "selected";
+  document.getElementById("returnModel").value = "overnight";
+  document.getElementById("portfolioTickers").value = symbols.join(", ");
+  activateTab("portfolio");
+  toast(`Loaded ${symbols.length} signal candidates into the builder — optimizing`);
+  document.getElementById("portfolioForm").requestSubmit();
+}
+
+document.getElementById("optimizeCandidatesButton")?.addEventListener("click", optimizeCurrentCandidates);
