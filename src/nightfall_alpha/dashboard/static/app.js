@@ -335,6 +335,15 @@ Details: Enter as a decimal, so 0.07 means 7 percent.`,
   signalMinSignal: `Description: Minimum signal threshold required for a stock to be selected.
 Model impact: Raising this filter makes the strategy more selective and can leave cash undeployed when too few names qualify. Lowering it allows weaker candidates into the book.
 Details: Signal values are rolling overnight Sharpe-like scores, so the scale depends on the chosen lookback and available history.`,
+  signalCapitalCapacity: `Description: Maximum dollars the strategy may deploy each day, regardless of how large the account has grown.
+Model impact: When set above 0, daily deployed capital is capped at this value and the excess sits in cash earning the Cash Rate. This flattens the equity curve's dollar growth once the account outgrows the cap, while percentage metrics reflect only the deployable book.
+Details: Use it to answer "how big can this strategy actually get?" — a real overnight book cannot scale forever. Enter 0 to disable the cap.`,
+  signalCashRate: `Description: Annualized interest rate earned on undeployed cash, entered as a percent.
+Model impact: When the book does not use 100 percent of equity (Top N x Max Weight below 1, or a Capital Capacity cap), the idle portion earns this rate divided by 252 each day, slightly raising net returns and Sharpe.
+Details: Enter 4 for roughly a 4 percent T-bill-style yield. 0 treats cash as earning nothing, the conservative default.`,
+  signalAdvParticipation: `Description: Maximum share of each stock's average daily dollar volume (ADV) the strategy may trade, entered as a percent.
+Model impact: Per-name weights are capped so the traded notional never exceeds this fraction of that stock's ADV. Thinly traded names get scaled down first, which reduces exposure exactly where real fills would be hardest.
+Details: 10 means no more than 10 percent of a name's daily dollar volume. 0 disables the liquidity check. Combine with Capital Capacity to find the realistic size limit of the strategy.`,
   signalPriceStart: `Description: First price date used by the Signal Backtest.
 Model impact: This controls the beginning of the backtest data window for equity, drawdown, metrics, candidates, and trades.
 Details: It is normally synced from the Market Data tab after a download, but you can override it here for research runs. The date is a filter on the local cache, not a data source: if you pick a date earlier than the cache's first bar (currently 1962-01-02, Yahoo's adjusted-history floor for most tickers), the run starts at the first available bar and the summary line says so. To test earlier periods, download older history first — Stooq can reach further back for some names.`,
@@ -1277,8 +1286,14 @@ function renderPortfolios(rows) {
     const observations = matrix.output_observations || rows[0]?.observations;
     const maxWeight = matrix.max_weight ?? matrix.effective_max_weight;
     const capText = maxWeight ? ` | cap ${formatPct(maxWeight)}` : "";
+    const excluded = (matrix.excluded_symbols || []).length;
+    const coverageText = dataWindow.start && start > dataWindow.start
+      ? ` | starts ${start} (not ${dataWindow.start}) because every included symbol needs complete overlapping history — ${excluded} thin-history symbols excluded`
+      : excluded
+        ? ` | ${excluded} thin-history symbols excluded`
+        : "";
     meta.textContent = rows.length
-      ? `saved signal/data pipeline output | ${start} to ${end}${symbols ? ` | ${Number(symbols).toLocaleString()} symbols` : ""}${observations ? ` | ${Number(observations).toLocaleString()} obs` : ""}${capText}`
+      ? `saved signal/data pipeline output | ${start} to ${end}${symbols ? ` | ${Number(symbols).toLocaleString()} symbols` : ""}${observations ? ` | ${Number(observations).toLocaleString()} obs` : ""}${capText}${coverageText}`
       : "Run Market Data or Signal Backtest to refresh this saved suite";
   }
   rows.forEach((row) => {
