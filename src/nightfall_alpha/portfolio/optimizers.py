@@ -413,6 +413,25 @@ def portfolio_statistics(
     )
 
 
+def _daily_rebalance_turnover(returns: pd.DataFrame, weights: pd.Series) -> pd.Series:
+    """One-side turnover needed each day to restore target weights after drift.
+
+    Applying fixed weights to daily returns implies the book is rebalanced back
+    to target every day: winners are trimmed, losers topped up. Each of those
+    adjustments is a real sale or purchase and must be billed. Day 0 is left at
+    zero here because callers bill the initial allocation separately.
+    """
+    w = weights.reindex(returns.columns).fillna(0.0).astype(float)
+    portfolio_returns = returns @ w
+    growth = 1.0 + portfolio_returns
+    growth = growth.where(growth.abs() > 1e-12, 1e-12)
+    drifted = returns.add(1.0).mul(w, axis=1).div(growth, axis=0)
+    turnover = (drifted - w).abs().sum(axis=1)
+    if not turnover.empty:
+        turnover.iloc[0] = 0.0
+    return turnover.fillna(0.0)
+
+
 def portfolio_metric_details(
     weights: pd.Series,
     return_matrix: pd.DataFrame,
@@ -431,9 +450,12 @@ def portfolio_metric_details(
     gross_exposure = float(weights.abs().sum())
     positions = int((weights.abs() > 1e-6).sum())
     cost_per_side = max(float(fees_bps) + float(slippage_bps), 0.0) / 10_000.0
+    drift_turnover = _daily_rebalance_turnover(clean, weights)
     rows: list[dict[str, float | int | object]] = []
     for index, (date, gross_return) in enumerate(portfolio_returns.items()):
-        turnover_value = gross_exposure if index == 0 else 0.0
+        # Day 0 bills the initial allocation; every later day bills the
+        # drift-rebalancing sales/purchases that fixed-weight math implies.
+        turnover_value = gross_exposure if index == 0 else float(drift_turnover.iloc[index])
         cost_return = turnover_value * cost_per_side
         net_return = float(gross_return) - cost_return
         starting_equity = equity
@@ -742,7 +764,9 @@ def build_rebalanced_portfolio_suite(
             portfolio_returns = period @ weights
             exposure = float(weights.abs().sum())
             positions = int((weights.abs() > 1e-6).sum())
-            turnover = pd.Series(0.0, index=period.index, dtype=float)
+            # Bill the rebalance itself on day 0 of the period, then bill the
+            # daily drift-rebalancing that fixed-weight math implies after that.
+            turnover = _daily_rebalance_turnover(period, weights)
             if not turnover.empty:
                 turnover.iloc[0] = turnover_value
 

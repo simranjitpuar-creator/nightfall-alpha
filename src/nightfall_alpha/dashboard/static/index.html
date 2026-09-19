@@ -1334,6 +1334,9 @@
                   The per-side rate is <code>(Fees Bps + Slippage Bps) / 10000</code>.
                   Static portfolios pay initial allocation turnover on the first row.
                   Rebalanced portfolios pay turnover when target weights change at each rebalance.
+                  Because fixed weights are applied to daily returns, every day also implies
+                  <strong>drift rebalancing</strong> — trimming winners and topping up losers back to target —
+                  and those daily sales and purchases are billed at the same per-side rate.
                   Net return is <code>gross portfolio return - turnover cost</code>.
                 </p>
 
@@ -1366,7 +1369,7 @@
                   <li><strong>Start, End, Years, Obs</strong> describe the performance sample used for each optimizer row.</li>
                   <li><strong>Initial Equity, Ending Equity, Period Return, CAGR, Ann Return</strong> describe compounded return after costs.</li>
                   <li><strong>Annual Vol, Sharpe, Sortino, Calmar, Max DD, VaR 95, CVaR 95</strong> describe volatility, downside, drawdown, and tail risk after costs.</li>
-                  <li><strong>Cost Drag</strong> is the sum of modeled portfolio allocation and rebalance cost returns.</li>
+                  <li><strong>Cost Drag</strong> is the sum of modeled portfolio allocation, rebalance, and daily drift-rebalancing cost returns.</li>
                   <li><strong>Rolling ratios</strong> show the most recent 1, 3, and 5 year risk-adjusted performance windows when enough observations exist.</li>
                   <li><strong>Win Rate</strong> and <strong>Profit Factor</strong> summarize daily net return consistency.</li>
                   <li><strong>Invested</strong> is the sum of target weights. <strong>Cash</strong> is uninvested capital left by caps or conservative methods.</li>

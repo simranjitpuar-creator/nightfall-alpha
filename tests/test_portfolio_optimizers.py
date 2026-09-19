@@ -7,6 +7,7 @@ from nightfall_alpha.portfolio.optimizers import (
     OptimizerSuiteSettings,
     build_portfolio_suite,
     build_rebalanced_portfolio_suite,
+    portfolio_metric_details,
     project_capped_simplex,
 )
 from nightfall_alpha.portfolio.risk import prepare_optimization_matrix
@@ -158,6 +159,24 @@ class PortfolioOptimizerTests(unittest.TestCase):
         cost_row = cost_summary.set_index("portfolio").loc["Inverse Volatility"]
         self.assertGreater(float(cost_row["total_cost_return"]), 0.0)
         self.assertLess(float(cost_row["final_equity"]), float(free_row["final_equity"]))
+
+    def test_static_mode_bills_daily_drift_rebalancing(self) -> None:
+        # Opposing daily moves with 50/50 weights: the book drifts every day,
+        # so restoring target weights means real sales/purchases that must be
+        # billed on top of the initial allocation.
+        returns = pd.DataFrame(
+            {"AAA": 0.01, "BBB": -0.01},
+            index=pd.bdate_range("2024-01-01", periods=40),
+        )
+        details = portfolio_metric_details(
+            pd.Series({"AAA": 0.5, "BBB": 0.5}),
+            returns,
+            initial_capital=100_000.0,
+            fees_bps=5.0,
+            slippage_bps=5.0,
+        )
+        allocation_only_cost = 1.0 * 10.0 / 10_000.0  # gross exposure × per-side rate
+        self.assertGreater(float(details["total_cost_return"]), allocation_only_cost * 1.2)
 
     def test_portfolio_suite_accepts_method_specific_parameters(self) -> None:
         returns = pd.DataFrame(

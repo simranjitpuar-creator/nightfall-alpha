@@ -610,7 +610,7 @@ Model impact: Output only. It is a deeper tail-risk estimate than VaR.
 Details: CVaR Aware uses this tail-risk idea when selecting weights.`,
   "Cost Drag": `Description: Sum of modeled transaction cost returns over the test window.
 Model impact: Higher fees, slippage, exposure, or turnover increase this value and reduce net returns.
-Details: Signal Backtest charges daily overnight round trips. Portfolio Research charges allocation and rebalance turnover.`,
+Details: Signal Backtest charges daily overnight round trips. Portfolio Research charges the initial allocation, rebalance turnover, and the daily drift-rebalancing implied by holding fixed weights against moving prices.`,
   Invested: `Description: Sum of portfolio weights actually deployed.
 Model impact: Lower max-weight caps can make this less than 100 percent, leaving the rest in cash.
 Details: This is why a 1 percent max weight across 8 names invests up to 8 percent and leaves roughly 92 percent cash.`,
