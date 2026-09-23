@@ -1920,16 +1920,14 @@ function handleCurvePointerLeave() {
 }
 
 async function loadDashboard() {
-  const [overview, equity, daily, trades] = await Promise.all([
+  const [overview, equity, trades] = await Promise.all([
     fetchJson("/api/overview"),
     fetchJson("/api/equity"),
-    fetchJson("/api/daily"),
     fetchJson(`/api/trades?${tradeQueryParams(true).toString()}`),
   ]);
 
   state.overview = overview;
   state.equity = equity.rows || [];
-  state.daily = daily.rows || [];
   state.trades = trades.rows || [];
   state.tradeSummary = trades.summary || null;
   syncTradeDateDefaults(state.tradeSummary);
@@ -1950,9 +1948,11 @@ async function loadDashboard() {
   renderOverviewHome(overview);
   syncSignalWindowFromOverview(overview.data_window);
 
+  const generatedAt = overview.metrics?.generated_at;
+  const savedRunText = generatedAt ? ` | saved run ${generatedAt}` : "";
   document.getElementById("asOf").textContent = overview.latest_signal_date
-    ? `Current book date ${overview.latest_signal_date} | ${strategy.lookback_days || 63}D signal lookback`
-    : "No current book";
+    ? `Current book date ${overview.latest_signal_date} | ${strategy.lookback_days || 63}D signal lookback${savedRunText}`
+    : `No current book${savedRunText}`;
   const summaryMeta = document.getElementById("summaryMeta");
   if (summaryMeta) {
     const start = state.equity[0]?.date;

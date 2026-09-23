@@ -48,6 +48,8 @@ Startup behavior:
 
 NightFall Alpha no longer downloads market data automatically on launch. Use the Market Data tab when you want to refresh prices, or use the Portfolio Research builder's missing-data controls for targeted fills.
 
+Every signal backtest run is saved to `data/reports/`. When the dashboard opens it automatically loads the most recent saved run — the status bar shows `saved run YYYY-MM-DD HH:MM:SS` so you can tell you are looking at a previous run rather than a fresh one, and the Signal Backtest controls are prefilled with that run's settings (date window, tickers, top-N, cost model, capacity limits). Report sections are cached in memory keyed on file mtimes, so repeat page loads are near-instant and any new run invalidates the cache automatically.
+
 ## Streamlit deployment
 
 The repo includes a Streamlit Cloud entrypoint at:

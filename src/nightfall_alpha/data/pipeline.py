@@ -493,6 +493,7 @@ def run_research_pipeline(
     portfolio_summary.to_csv(paths.portfolio_summary_path, index=False)
     portfolio_weights.to_csv(paths.portfolio_weights_path, index=False)
 
+    metrics["generated_at"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
     with paths.metrics_path.open("w", encoding="utf-8") as handle:
         json.dump(metrics, handle, indent=2, default=str)
 

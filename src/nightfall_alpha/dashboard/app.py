@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -257,83 +258,88 @@ def _csv_response(frame: pd.DataFrame, filename: str) -> Response:
     )
 
 
-# Report payloads are expensive to assemble (several large CSVs per API call),
-# so cache them keyed on the report files' mtimes. Any pipeline rerun rewrites
-# the reports and invalidates the cache automatically.
-_PAYLOAD_CACHE: dict[str, Any] = {"signature": None, "payload": None}
+# Report files are expensive to read (trades/signals run to hundreds of
+# thousands of rows on a full-history run), so each report section is cached
+# individually keyed on its file mtime, and endpoints only load the sections
+# they actually need. Any pipeline rerun rewrites the reports and invalidates
+# the cache automatically. A lock keeps parallel first-load requests from
+# reading the same file twice.
+_REPORT_LOCK = threading.Lock()
+_REPORT_CACHE: dict[str, dict[str, Any]] = {}
 
 
-def _report_signature(paths: Any) -> tuple[int | None, ...]:
-    report_files = (
-        paths.metrics_path,
-        paths.daily_path,
-        paths.equity_path,
-        paths.trades_path,
-        paths.portfolio_summary_path,
-        paths.portfolio_weights_path,
-        paths.signals_path,
+def _report_section(name: str, path: Path, loader: Any) -> Any:
+    signature = path.stat().st_mtime_ns if path.exists() else None
+    entry = _REPORT_CACHE.get(name)
+    if entry is not None and entry["signature"] == signature:
+        return entry["data"]
+    with _REPORT_LOCK:
+        entry = _REPORT_CACHE.get(name)
+        if entry is not None and entry["signature"] == signature:
+            return entry["data"]
+        data = loader()
+        _REPORT_CACHE[name] = {"signature": signature, "data": data}
+        return data
+
+
+def _load_metrics_section(paths: Any) -> dict[str, Any]:
+    return _report_section("metrics", paths.metrics_path, lambda: load_metrics(paths.metrics_path))
+
+
+def _load_frame_section(paths: Any, name: str) -> pd.DataFrame:
+    path = getattr(paths, f"{name}_path")
+    return _report_section(name, path, lambda: load_report_csv(path))
+
+
+def _enriched_portfolio_summary(paths: Any) -> pd.DataFrame:
+    portfolio_summary = _load_frame_section(paths, "portfolio_summary")
+    portfolio_weights = _load_frame_section(paths, "portfolio_weights")
+    if portfolio_summary.empty or portfolio_weights.empty or "portfolio" not in portfolio_weights:
+        return portfolio_summary
+    weights = portfolio_weights.copy()
+    weights["weight"] = pd.to_numeric(weights.get("weight", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
+    exposure = weights.groupby("portfolio")["weight"].agg(
+        weight_sum="sum",
+        gross_exposure=lambda values: values.abs().sum(),
+        max_weight="max",
     )
-    return tuple(path.stat().st_mtime_ns if path.exists() else None for path in report_files)
+    exposure["cash_weight"] = (1.0 - exposure["weight_sum"]).clip(lower=0.0)
+    portfolio_summary = portfolio_summary.merge(
+        exposure.reset_index(),
+        on="portfolio",
+        how="left",
+        suffixes=("", "_from_weights"),
+    )
+    for column in ("weight_sum", "gross_exposure", "cash_weight", "max_weight"):
+        fallback = f"{column}_from_weights"
+        if fallback in portfolio_summary:
+            if column in portfolio_summary:
+                portfolio_summary[column] = portfolio_summary[column].fillna(portfolio_summary[fallback])
+            else:
+                portfolio_summary[column] = portfolio_summary[fallback]
+            portfolio_summary = portfolio_summary.drop(columns=[fallback])
+    return portfolio_summary
 
 
-def _load_payload(settings: Settings) -> dict[str, Any]:
-    paths = ensure_reports(settings)
-    signature = _report_signature(paths)
-    if _PAYLOAD_CACHE["payload"] is not None and _PAYLOAD_CACHE["signature"] == signature:
-        return _PAYLOAD_CACHE["payload"]
-    payload = _build_payload(settings, paths)
-    _PAYLOAD_CACHE["signature"] = signature
-    _PAYLOAD_CACHE["payload"] = payload
-    return payload
+def _latest_holdings(settings: Settings, paths: Any) -> tuple[Any, pd.DataFrame]:
+    signals = _load_frame_section(paths, "signals")
+    if signals.empty:
+        return None, pd.DataFrame()
+    signals = signals.copy()
+    signals["signal_date"] = pd.to_datetime(signals["signal_date"], errors="coerce")
+    latest_signal_date = signals["signal_date"].max()
+    latest_holdings = signals[signals["signal_date"] == latest_signal_date].sort_values("weight", ascending=False)
+    try:
+        metadata = load_universe_metadata(settings, refresh_market_caps=False)[
+            ["symbol", "name", "sector", "sector_code", "market_cap"]
+        ]
+        latest_holdings = latest_holdings.merge(metadata, on="symbol", how="left")
+    except Exception:
+        latest_holdings = latest_holdings.copy()
+    return latest_signal_date, latest_holdings
 
 
-def _build_payload(settings: Settings, paths: Any) -> dict[str, Any]:
-    metrics = load_metrics(paths.metrics_path)
-    daily = load_report_csv(paths.daily_path)
-    equity = load_report_csv(paths.equity_path)
-    trades = load_report_csv(paths.trades_path)
-    portfolio_summary = load_report_csv(paths.portfolio_summary_path)
-    portfolio_weights = load_report_csv(paths.portfolio_weights_path)
-    signals = load_report_csv(paths.signals_path)
-
-    if not portfolio_summary.empty and not portfolio_weights.empty and "portfolio" in portfolio_weights:
-        weights = portfolio_weights.copy()
-        weights["weight"] = pd.to_numeric(weights.get("weight", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
-        exposure = weights.groupby("portfolio")["weight"].agg(
-            weight_sum="sum",
-            gross_exposure=lambda values: values.abs().sum(),
-            max_weight="max",
-        )
-        exposure["cash_weight"] = (1.0 - exposure["weight_sum"]).clip(lower=0.0)
-        portfolio_summary = portfolio_summary.merge(
-            exposure.reset_index(),
-            on="portfolio",
-            how="left",
-            suffixes=("", "_from_weights"),
-        )
-        for column in ("weight_sum", "gross_exposure", "cash_weight", "max_weight"):
-            fallback = f"{column}_from_weights"
-            if fallback in portfolio_summary:
-                if column in portfolio_summary:
-                    portfolio_summary[column] = portfolio_summary[column].fillna(portfolio_summary[fallback])
-                else:
-                    portfolio_summary[column] = portfolio_summary[fallback]
-                portfolio_summary = portfolio_summary.drop(columns=[fallback])
-
-    latest_signal_date = None
-    latest_holdings = pd.DataFrame()
-    if not signals.empty:
-        signals["signal_date"] = pd.to_datetime(signals["signal_date"], errors="coerce")
-        latest_signal_date = signals["signal_date"].max()
-        latest_holdings = signals[signals["signal_date"] == latest_signal_date].sort_values("weight", ascending=False)
-        try:
-            metadata = load_universe_metadata(settings, refresh_market_caps=False)[
-                ["symbol", "name", "sector", "sector_code", "market_cap"]
-            ]
-            latest_holdings = latest_holdings.merge(metadata, on="symbol", how="left")
-        except Exception:
-            latest_holdings = latest_holdings.copy()
-
+def _metrics_context(settings: Settings, metrics: dict[str, Any]) -> dict[str, Any]:
     strategy = metrics.get("strategy") if isinstance(metrics.get("strategy"), dict) else {}
     backtest = metrics.get("backtest") if isinstance(metrics.get("backtest"), dict) else {}
     data_window = metrics.get("data_window") if isinstance(metrics.get("data_window"), dict) else {}
@@ -359,16 +365,7 @@ def _build_payload(settings: Settings, paths: Any) -> dict[str, Any]:
     if survivorship is None and metrics:
         # Older metrics.json predates membership tracking; warn conservatively.
         survivorship = {"point_in_time": False, "warning": SURVIVORSHIP_WARNING}
-
     return {
-        "metrics": metrics,
-        "daily": daily,
-        "equity": equity,
-        "trades": trades,
-        "portfolio_summary": portfolio_summary,
-        "portfolio_weights": portfolio_weights,
-        "latest_signal_date": latest_signal_date.strftime("%Y-%m-%d") if pd.notna(latest_signal_date) else None,
-        "latest_holdings": latest_holdings,
         "strategy": strategy_context,
         "backtest": backtest_context,
         "data_window": data_window,
@@ -405,29 +402,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/overview")
     def overview() -> dict[str, Any]:
-        payload = _load_payload(cfg)
-        portfolio_summary = payload["portfolio_summary"]
-        candidate_limit = max(1, min(int(payload["strategy"].get("top_n", 25)), 505))
+        paths = ensure_reports(cfg)
+        metrics = _load_metrics_section(paths)
+        context = _metrics_context(cfg, metrics)
+        latest_signal_date, latest_holdings = _latest_holdings(cfg, paths)
+        candidate_limit = max(1, min(int(context["strategy"].get("top_n", 25)), 505))
         return {
-            "metrics": payload["metrics"],
-            "latest_signal_date": payload["latest_signal_date"],
-            "latest_holdings": _records(payload["latest_holdings"].head(candidate_limit)),
-            "portfolio_summary": _records(portfolio_summary),
-            "strategy": payload["strategy"],
-            "backtest": payload["backtest"],
-            "data_window": payload["data_window"],
-            "survivorship": payload["survivorship"],
+            "metrics": metrics,
+            "latest_signal_date": (
+                latest_signal_date.strftime("%Y-%m-%d") if latest_signal_date is not None and pd.notna(latest_signal_date) else None
+            ),
+            "latest_holdings": _records(latest_holdings.head(candidate_limit)),
+            "portfolio_summary": _records(_enriched_portfolio_summary(paths)),
+            "strategy": context["strategy"],
+            "backtest": context["backtest"],
+            "data_window": context["data_window"],
+            "survivorship": context["survivorship"],
         }
 
     @app.get("/api/equity")
     def equity() -> dict[str, Any]:
-        payload = _load_payload(cfg)
-        return {"rows": _records(payload["equity"])}
-
-    @app.get("/api/daily")
-    def daily() -> dict[str, Any]:
-        payload = _load_payload(cfg)
-        return {"rows": _records(payload["daily"])}
+        paths = ensure_reports(cfg)
+        return {"rows": _records(_load_frame_section(paths, "equity"))}
 
     @app.get("/api/trades")
     def trades(
@@ -437,8 +433,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         symbol: str | None = None,
         pnl: str = "all",
     ) -> dict[str, Any]:
-        payload = _load_payload(cfg)
-        trades_frame = payload["trades"].copy()
+        paths = ensure_reports(cfg)
+        trades_frame = _load_frame_section(paths, "trades")
         filtered = _filter_trades_frame(trades_frame, start=start, end=end, symbol=symbol, pnl=pnl)
         frame = filtered.tail(max(1, min(limit, 10_000)))
         summary = _trade_summary(trades_frame, filtered, frame)
@@ -451,20 +447,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         symbol: str | None = None,
         pnl: str = "all",
     ) -> Response:
-        payload = _load_payload(cfg)
-        frame = _filter_trades_frame(payload["trades"].copy(), start=start, end=end, symbol=symbol, pnl=pnl)
+        paths = ensure_reports(cfg)
+        frame = _filter_trades_frame(_load_frame_section(paths, "trades"), start=start, end=end, symbol=symbol, pnl=pnl)
         sort_columns = [column for column in ("exit_date", "signal_date", "symbol", "signal_rank") if column in frame]
         if sort_columns:
             frame = frame.sort_values(sort_columns, kind="mergesort")
         return _csv_response(frame, "nightfall_alpha_trade_blotter.csv")
-
-    @app.get("/api/portfolio-weights")
-    def portfolio_weights(portfolio: str | None = None) -> dict[str, Any]:
-        payload = _load_payload(cfg)
-        frame = payload["portfolio_weights"]
-        if portfolio and not frame.empty:
-            frame = frame[frame["portfolio"] == portfolio]
-        return {"rows": _records(frame)}
 
     @app.get("/api/universe")
     def universe(refresh_market_caps: bool = False) -> dict[str, Any]:
@@ -697,8 +685,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/benchmarks")
     def benchmark_endpoint(keys: str = "SP500,SP100,NASDAQ", refresh: bool = False) -> dict[str, Any]:
         try:
-            payload = _load_payload(cfg)
-            daily = payload["daily"]
+            paths = ensure_reports(cfg)
+            daily = _load_frame_section(paths, "daily")
             if daily.empty:
                 raise HTTPException(status_code=400, detail="Run a backtest first; no daily returns exist yet.")
             daily = daily.copy()

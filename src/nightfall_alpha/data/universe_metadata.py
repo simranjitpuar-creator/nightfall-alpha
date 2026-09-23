@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -89,12 +90,54 @@ def fetch_market_caps(symbols: list[str]) -> dict[str, float | None]:
     return caps
 
 
+# Assembling metadata is expensive (it scans the full price cache for symbols),
+# so cache the result keyed on the mtimes of every input file. Market-cap
+# refreshes always bypass the cache because they fetch live data.
+_METADATA_CACHE: dict[str, Any] = {"signature": None, "frame": None}
+_METADATA_LOCK = threading.Lock()
+
+
+def _metadata_signature(cfg: Settings) -> tuple[Any, ...]:
+    processed = cfg.project.data_dir / "processed"
+    inputs = (
+        _metadata_path(cfg),
+        cfg.universe.live_file,
+        cfg.universe.sample_file,
+        processed / "prices.parquet",
+        processed / "prices.csv",
+    )
+    return tuple(path.stat().st_mtime_ns if path.exists() else None for path in inputs)
+
+
 def load_universe_metadata(
     settings: Settings | None = None,
     refresh_market_caps: bool = False,
     cap_limit: int = 75,
 ) -> pd.DataFrame:
     cfg = settings or load_settings()
+    if not refresh_market_caps:
+        signature = _metadata_signature(cfg)
+        cached = _METADATA_CACHE.get("frame")
+        if isinstance(cached, pd.DataFrame) and _METADATA_CACHE.get("signature") == signature:
+            return cached.copy()
+        with _METADATA_LOCK:
+            cached = _METADATA_CACHE.get("frame")
+            if isinstance(cached, pd.DataFrame) and _METADATA_CACHE.get("signature") == signature:
+                return cached.copy()
+            frame = _build_universe_metadata(cfg, refresh_market_caps=False, cap_limit=cap_limit)
+            # The build rewrites metadata.csv, which bumps its mtime — store the
+            # post-build signature or the cache invalidates itself on every call.
+            _METADATA_CACHE["signature"] = _metadata_signature(cfg)
+            _METADATA_CACHE["frame"] = frame
+            return frame.copy()
+    return _build_universe_metadata(cfg, refresh_market_caps=True, cap_limit=cap_limit)
+
+
+def _build_universe_metadata(
+    cfg: Settings,
+    refresh_market_caps: bool = False,
+    cap_limit: int = 75,
+) -> pd.DataFrame:
     metadata_path = _metadata_path(cfg)
     base = _base_universe(cfg)
     cached_symbols = _price_symbols(cfg)
