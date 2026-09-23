@@ -55,13 +55,13 @@ BALL,Ball Corporation,Materials
 BAX,Baxter International,Health Care
 BBY,Best Buy,Consumer Discretionary
 BDX,Becton Dickinson,Health Care
+BE,Bloom Energy,Industrials
 BEN,Franklin Resources,Financials
 BF-B,Brown–Forman,Consumer Staples
 BG,Bunge Global,Consumer Staples
 BIIB,Biogen,Health Care
 BKNG,Booking Holdings,Consumer Discretionary
 BKR,Baker Hughes,Energy
-BLDR,Builders FirstSource,Industrials
 BLK,BlackRock,Financials
 BMY,Bristol Myers Squibb,Health Care
 BNY,BNY Mellon,Financials
@@ -242,6 +242,7 @@ ICE,Intercontinental Exchange,Financials
 IDXX,Idexx Laboratories,Health Care
 IEX,IDEX Corporation,Industrials
 IFF,International Flavors & Fragrances,Materials
+ILMN,"Illumina, Inc.",Health Care
 INCY,Incyte,Health Care
 INTC,Intel,Information Technology
 INTU,Intuit,Information Technology
@@ -352,6 +353,7 @@ ORCL,Oracle Corporation,Information Technology
 ORLY,O'Reilly Automotive,Consumer Discretionary
 OTIS,Otis Worldwide,Industrials
 OXY,Occidental Petroleum,Energy
+P,Everpure,Information Technology
 PANW,Palo Alto Networks,Information Technology
 PAYX,Paychex,Industrials
 PCAR,Paccar,Industrials
@@ -425,7 +427,6 @@ SYF,Synchrony Financial,Financials
 SYK,Stryker Corporation,Health Care
 SYY,Sysco,Consumer Staples
 T,AT&T,Communication Services
-TAP,Molson Coors Beverage Company,Consumer Staples
 TDG,TransDigm Group,Industrials
 TDY,Teledyne Technologies,Information Technology
 TECH,Bio-Techne,Health Care
@@ -447,7 +448,6 @@ TSCO,Tractor Supply,Consumer Discretionary
 TSLA,"Tesla, Inc.",Consumer Discretionary
 TSN,Tyson Foods,Consumer Staples
 TT,Trane Technologies,Industrials
-TTD,Trade Desk (The),Communication Services
 TTWO,Take-Two Interactive,Communication Services
 TXN,Texas Instruments,Information Technology
 TXT,Textron,Industrials

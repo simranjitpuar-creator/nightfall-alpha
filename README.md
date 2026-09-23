@@ -177,6 +177,15 @@ For the builder to use long history, choose `Yahoo Max History`, enable `Refresh
 
 Portfolio Research can run static weights or rolling monthly, quarterly, or annual rebalancing. In rebalance mode, `Lookback` is the trailing estimation window used at each rebalance; `Use all history` switches that to expanding prior history.
 
+### Two suites, two different questions
+
+The Portfolio Research tab hosts two fundamentally different approaches:
+
+- **Allocation suites (Builder + Saved Signal Universe):** a fixed basket of names with no daily stock selection. The optimizers only decide *how much* of each name to hold — estimated once (Static Weights, constant-mix rebalanced daily) or re-estimated at each rebalance date. Membership never changes.
+- **Signal-Optimized Suite (bottom of the tab):** the strategy you actually trade. Every night the universe is re-ranked exactly like the Signal Backtest, the top-N candidates are selected, and the chosen optimizer sizes *that night's book only*, estimated on those names' trailing overnight returns (default 126 days). Membership and weights change daily, and every weight change is billed at each stock's own cost rate. Nights without enough overlapping history for covariance estimation fall back to score weighting and are counted as fallback days.
+
+Available optimizers: Mean Variance, Minimum Variance, Inverse Volatility, Kelly 50%, CVaR Aware, Black-Litterman, plus Equal Weight and Signal Score Weighted baselines. Note that a binding weight cap (cap × top-N near 100%) pushes every method to the same near-equal allocation — leave headroom if you want optimizers to differentiate. Results persist to `data/reports/signal_portfolio*.json/csv` and reload automatically. Full-history nightly re-optimization takes seconds for score/equal weight and a few minutes for gradient optimizers; narrow the date window for quick iterations.
+
 ## Real S&P 500 data path
 
 The project expects a dated universe file at:

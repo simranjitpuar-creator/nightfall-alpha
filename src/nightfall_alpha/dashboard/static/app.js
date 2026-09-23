@@ -395,6 +395,30 @@ Details: The full filtered set (beyond this cap) is always available via Downloa
   optimizeCandidatesButton: `Description: Sends the current overnight candidate list straight into the Portfolio Builder and runs the optimizer suite on those names.
 Model impact: The builder switches to Selected Stocks universe mode and the Overnight return model, fills the ticker field with tonight's book, and builds immediately — so the optimizer weights are estimated on the same names the signal ranks produced.
 Details: This is the bridge between the two research tracks: the signal picks the names, the optimizer sizes them. Compare the optimizer weights against the signal book's rank-based weights, and check which optimizer the app marks Best Sharpe.`,
+  portfolioTwoSuitesTitle: `Description: Explains the fundamental difference between the allocation suites on this tab and the Signal-Optimized Suite at the bottom.
+Model impact: The allocation suites hold a fixed basket and only decide weights — no daily stock selection. The Signal-Optimized Suite re-ranks the universe every night, selects the top-N signal candidates, and re-optimizes that night's book daily.
+Details: Numbers from the two approaches answer different questions and should not be compared as if they were the same strategy.`,
+  signalPortfolioTitle: `Description: The hybrid backtest: nightly signal selection (exactly like the Signal Backtest) sized by a portfolio optimizer instead of score weights.
+Model impact: Every night the top-N candidates are re-selected, the chosen optimizer is estimated on those names' trailing overnight returns, the book is traded, and every weight change is billed at per-stock cost rates. Membership and weights change daily.
+Details: This mirrors the live trading workflow: tonight's candidates in, optimized allocation out. When a night lacks enough overlapping history for covariance estimation, that night falls back to score weighting and is counted in Fallback Days.`,
+  spMethod: `Description: The optimizer used to size each night's selected book.
+Model impact: Mean Variance maximizes return per unit of risk (often concentrates); Minimum Variance and Inverse Volatility prioritize stability; Kelly 50% targets half-Kelly growth (holds cash by design); CVaR Aware minimizes tail loss; Black-Litterman blends a balanced prior with sample returns; Equal Weight and Signal Score Weighted are non-optimizer baselines.
+Details: Gradient optimizers run a limited iteration budget per night for speed; weights may differ slightly from the one-shot allocation suite.`,
+  spEstimationDays: `Description: Trailing overnight-return window used to estimate expected returns and covariances for each night's book.
+Model impact: Longer windows are more stable but slower to adapt; shorter windows react quickly but are noisier. Only the candidates selected that night enter the matrix.
+Details: Nights with fewer overlapping observations than min history fall back to score weighting.`,
+  spTopN: `Description: Number of signal candidates traded each night.
+Model impact: Larger books diversify idiosyncratic risk but dilute the strongest signals and increase turnover cost.
+Details: Matches the Signal Backtest's Top N control; use the same value when comparing the two.`,
+  spMaxWeight: `Description: Per-stock weight cap applied by the optimizer each night.
+Model impact: Binding caps push the book toward equal weight regardless of optimizer — with cap times top-N near 100%, all methods converge to the same allocation.
+Details: Leave headroom (cap x N well above 100%) if you want optimizers to differentiate.`,
+  signalPortfolioCurveTitle: `Description: Equity curve of the nightly signal-selected, optimizer-sized book, net of per-stock costs.
+Model impact: Display-only.
+Details: Zoom with the slider or mouse wheel. Compare shape and drawdowns against the Signal Backtest curve and the allocation suite.`,
+  runSignalPortfolioButton: `Description: Runs the nightly selection + optimization backtest over the chosen window and saves the result for reload.
+Model impact: Score and equal weight finish in seconds; gradient optimizers (Mean Variance, CVaR, Black-Litterman) can take minutes on full history.
+Details: The result persists across page loads until the next run.`,
   universeMode: `Description: Chooses whether the portfolio builder uses only typed/selected tickers or the entire locally cached universe.
 Model impact: Selected Stocks gives controlled custom portfolios. Entire Local Universe lets the optimizer search across all cached symbols, which can materially change weights and risk metrics.
 Details: Entire universe runs can take longer and depend heavily on data availability.`,
@@ -915,6 +939,10 @@ function decorateHelpTargets() {
     "downloadBuilderWeightsCsv",
     "downloadTradesCsv",
     "optimizeCandidatesButton",
+    "portfolioTwoSuitesTitle",
+    "signalPortfolioTitle",
+    "signalPortfolioCurveTitle",
+    "runSignalPortfolioButton",
   ].forEach((key) => attachHelpIcon(document.getElementById(key), key));
   decoratePortfolioHeaderHelp();
 }
@@ -1980,6 +2008,7 @@ async function loadDashboard() {
   renderPortfolios(overview.portfolio_summary || []);
   renderTrades();
   renderCurves();
+  loadSavedSignalPortfolio();
 }
 
 async function loadTradesFromFilters() {
@@ -2906,3 +2935,130 @@ function optimizeCurrentCandidates() {
 }
 
 document.getElementById("optimizeCandidatesButton")?.addEventListener("click", optimizeCurrentCandidates);
+
+// ===================== SIGNAL-OPTIMIZED SUITE =====================
+function signalPortfolioPayload() {
+  return {
+    method: document.getElementById("spMethod").value,
+    estimation_days: numberInputValue("spEstimationDays", 126),
+    top_n: numberInputValue("spTopN", 25),
+    max_weight: numberInputValue("spMaxWeight", 0.12),
+    lookback_days: numberInputValue("spLookbackDays", 63),
+    min_signal: numberInputValue("spMinSignal", 0),
+    fees_bps: numberInputValue("spFeesBps", 0.5),
+    slippage_bps: numberInputValue("spSlippageBps", 1),
+    cash_rate: numberInputValue("spCashRate", 0) / 100,
+    initial_capital: numberInputValue("spInitialEquity", 1000000),
+    price_start: document.getElementById("spPriceStart").value || null,
+    price_end: document.getElementById("spPriceEnd").value || null,
+    price_symbols: document.getElementById("spPriceTickers").value.trim() || null,
+  };
+}
+
+function renderSignalPortfolio(data) {
+  const metrics = data.metrics || {};
+  const config = data.config || {};
+  const daily = data.daily || [];
+
+  const meta = document.getElementById("signalPortfolioMeta");
+  if (meta && config.method_label) {
+    meta.textContent = `${config.method_label} | top ${config.top_n} nightly | ${config.estimation_days}D estimation | cap ${formatPct(config.max_weight)} | ${config.fees_bps}+${config.slippage_bps} bps/side`;
+  }
+
+  const body = document.getElementById("signalPortfolioMetricsBody");
+  body.innerHTML = "";
+  if (data.metrics && metrics.observations) {
+    const avgPositions = daily.length
+      ? daily.reduce((sum, row) => sum + (Number(row.positions) || 0), 0) / daily.length
+      : null;
+    const cells = [
+      [config.method_label || config.method, "text"],
+      [metrics.start_date, "date"],
+      [metrics.end_date, "date"],
+      [metrics.elapsed_years, "years"],
+      [metrics.observations, "integer"],
+      [metrics.final_equity, "money"],
+      [metrics.total_return, "pct"],
+      [metrics.cagr, "pct"],
+      [metrics.annualized_volatility, "pct"],
+      [metrics.sharpe, "number"],
+      [metrics.sortino, "number"],
+      [metrics.calmar, "number"],
+      [metrics.max_drawdown, "pct"],
+      [metrics.win_rate, "pct"],
+      [metrics.cost_return_total, "pct"],
+      [metrics.average_turnover, "pct"],
+      [avgPositions, "number"],
+      [metrics.optimizer_fallback_days, "integer"],
+    ];
+    const row = document.createElement("tr");
+    row.innerHTML = cells
+      .map(([value, type]) => (type === "text" ? `<td>${value || "-"}</td>` : `<td>${formatByType(value, type)}</td>`))
+      .join("");
+    body.appendChild(row);
+  }
+
+  const bookBody = document.getElementById("signalPortfolioBookBody");
+  bookBody.innerHTML = "";
+  const book = data.current_book || [];
+  const bookMeta = document.getElementById("signalPortfolioBookMeta");
+  if (bookMeta) {
+    bookMeta.textContent = book.length
+      ? `${book.length} names sized by ${config.method_label || "the optimizer"} for the latest signal date`
+      : "run the suite to see tonight's optimized book";
+  }
+  book.forEach((entry) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${entry.signal_rank ?? "-"}</td>
+      <td>${entry.symbol}</td>
+      <td>${formatPct(entry.optimizer_weight)}</td>
+      <td>${formatNumber(entry.overnight_sharpe, 2)}</td>`;
+    bookBody.appendChild(row);
+  });
+
+  renderInteractiveChart("signalPortfolioChart", daily, ["equity"], {
+    yFormatter: (value) => formatMoney(value),
+    emptyText: "Run the signal-optimized backtest to load the curve",
+  });
+}
+
+async function runSignalPortfolio(event) {
+  if (event) event.preventDefault();
+  const button = document.getElementById("runSignalPortfolioButton");
+  const status = document.getElementById("signalPortfolioStatus");
+  button.disabled = true;
+  status.textContent = "Running";
+  startTaskProgress("taskProgress", "Re-optimizing nightly books...");
+  try {
+    const result = await fetchJson("/api/signal-portfolio/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signalPortfolioPayload()),
+    });
+    renderSignalPortfolio(result);
+    status.textContent = "Complete";
+    finishTaskProgress("taskProgress", "Signal-optimized backtest complete");
+  } catch (error) {
+    status.textContent = "Failed";
+    toast(error.message || "Signal-optimized backtest failed");
+    finishTaskProgress("taskProgress", "Signal-optimized backtest failed", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadSavedSignalPortfolio() {
+  try {
+    const result = await fetchJson("/api/signal-portfolio");
+    if (result.available) {
+      renderSignalPortfolio(result);
+      const status = document.getElementById("signalPortfolioStatus");
+      if (status && !status.textContent) status.textContent = "saved result loaded";
+    }
+  } catch (error) {
+    // No saved run yet — the section simply stays empty.
+  }
+}
+
+document.getElementById("signalPortfolioForm")?.addEventListener("submit", runSignalPortfolio);

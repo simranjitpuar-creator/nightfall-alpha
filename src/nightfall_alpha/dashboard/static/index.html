@@ -824,6 +824,36 @@
               </form>
             </section>
 
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2 id="portfolioTwoSuitesTitle">Two Suites, Two Different Questions</h2>
+                <span class="subtle">read this before comparing numbers across this tab</span>
+              </div>
+              <div class="framework-body">
+                <ul>
+                  <li>
+                    <strong>Allocation suites (Builder above, Saved Signal Universe below):</strong>
+                    a <em>fixed basket</em> of names with no daily stock selection. The optimizers only decide
+                    <em>how much</em> of each name to hold — estimated once over the lookback window (Static Weights,
+                    then constant-mix rebalanced back to target daily) or re-estimated at each Monthly/Quarterly/Annual
+                    rebalance date. Membership never changes; no signal is involved.
+                  </li>
+                  <li>
+                    <strong>Signal-Optimized Suite (bottom of this tab):</strong>
+                    the strategy you actually trade. Every night the universe is re-ranked exactly like the Signal
+                    Backtest, the top-N candidates are selected, and the optimizer you choose sizes <em>that night's
+                    book only</em>, estimated on the trailing overnight returns of those names. Membership and weights
+                    change daily, and every weight change is billed at each stock's own cost rate.
+                  </li>
+                </ul>
+                <p class="subtle">
+                  Comparing the two: the allocation suites answer "what was the best way to hold this basket over the
+                  window?" — the signal-optimized suite answers "what would nightly signal trading with optimizer
+                  sizing have done?" Different questions, different numbers.
+                </p>
+              </div>
+            </section>
+
             <section class="dashboard-grid">
               <div class="panel reveal">
                 <div class="panel-header">
@@ -941,6 +971,137 @@
                   </thead>
                   <tbody id="portfolioBody"></tbody>
                 </table>
+              </div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="panel-header">
+                <h2 id="signalPortfolioTitle">Signal-Optimized Suite</h2>
+                <span id="signalPortfolioStatus" class="subtle"></span>
+              </div>
+              <div class="framework-body">
+                <p>
+                  Every night: re-rank the universe by overnight signal, take the top-N candidates, estimate the
+                  chosen optimizer on those names' trailing overnight returns, trade that book, bill every weight
+                  change at per-stock cost rates, repeat. This is the daily-selection strategy with optimizer
+                  sizing — the backtest of the live workflow.
+                </p>
+              </div>
+              <form id="signalPortfolioForm" class="form-grid">
+                <label>
+                  <span>Optimizer</span>
+                  <select id="spMethod" name="spMethod">
+                    <option value="mean_variance" selected>Mean Variance</option>
+                    <option value="minimum_variance">Minimum Variance</option>
+                    <option value="inverse_volatility">Inverse Volatility</option>
+                    <option value="kelly">Kelly 50%</option>
+                    <option value="cvar">CVaR Aware</option>
+                    <option value="black_litterman">Black-Litterman</option>
+                    <option value="equal_weight">Equal Weight</option>
+                    <option value="score_weighted">Signal Score Weighted (baseline)</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Estimation Window (days)</span>
+                  <input id="spEstimationDays" name="spEstimationDays" type="number" min="20" step="1" value="126" />
+                </label>
+                <label>
+                  <span>Top N</span>
+                  <input id="spTopN" name="spTopN" type="number" min="1" max="505" step="1" value="25" />
+                </label>
+                <label>
+                  <span>Max Weight</span>
+                  <input id="spMaxWeight" name="spMaxWeight" type="number" min="0.01" max="1" step="0.01" value="0.12" />
+                </label>
+                <label>
+                  <span>Signal Lookback (days)</span>
+                  <input id="spLookbackDays" name="spLookbackDays" type="number" min="2" step="1" value="63" />
+                </label>
+                <label>
+                  <span>Min Signal</span>
+                  <input id="spMinSignal" name="spMinSignal" type="number" step="0.1" value="0" />
+                </label>
+                <label>
+                  <span>Fees (bps)</span>
+                  <input id="spFeesBps" name="spFeesBps" type="number" min="0" step="0.1" value="0.5" />
+                </label>
+                <label>
+                  <span>Slippage (bps)</span>
+                  <input id="spSlippageBps" name="spSlippageBps" type="number" min="0" step="0.1" value="1" />
+                </label>
+                <label>
+                  <span>Cash Rate (%/yr)</span>
+                  <input id="spCashRate" name="spCashRate" type="number" min="0" max="50" step="0.1" value="0" />
+                </label>
+                <label>
+                  <span>Initial Equity</span>
+                  <input id="spInitialEquity" name="spInitialEquity" type="number" min="1" step="1" value="1000000" />
+                </label>
+                <label>
+                  <span>Start Date (optional)</span>
+                  <input id="spPriceStart" name="spPriceStart" type="date" />
+                </label>
+                <label>
+                  <span>End Date (optional)</span>
+                  <input id="spPriceEnd" name="spPriceEnd" type="date" />
+                </label>
+                <label class="span-2">
+                  <span>Tickers (optional — blank uses the full local universe)</span>
+                  <input id="spPriceTickers" name="spPriceTickers" type="text" value="" />
+                </label>
+                <p class="subtle span-4">
+                  Full-history nightly re-optimization is heavy: seconds for score/equal weight, a few minutes for
+                  gradient optimizers (Mean Variance, CVaR, Black-Litterman) on 60+ years. Narrow the date window
+                  for quick iterations.
+                </p>
+                <button id="runSignalPortfolioButton" class="primary-btn submit" type="submit">Run Signal-Optimized Backtest</button>
+              </form>
+            </section>
+
+            <section class="dashboard-grid">
+              <div class="panel reveal">
+                <div class="panel-header">
+                  <h2 id="signalPortfolioMetricsTitle">Signal-Optimized Results</h2>
+                  <span id="signalPortfolioMeta" class="subtle"></span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Optimizer</th><th>Start</th><th>End</th><th>Years</th><th>Obs</th>
+                        <th>Ending Equity</th><th>Period Return</th><th>CAGR</th><th>Ann Vol</th>
+                        <th>Sharpe</th><th>Sortino</th><th>Calmar</th><th>Max DD</th><th>Win Rate</th>
+                        <th>Cost Drag</th><th>Avg Turnover</th><th>Positions</th><th>Fallback Days</th>
+                      </tr>
+                    </thead>
+                    <tbody id="signalPortfolioMetricsBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="panel reveal">
+                <div class="panel-header">
+                  <h2 id="signalPortfolioBookTitle">Current Night's Optimized Book</h2>
+                  <span id="signalPortfolioBookMeta" class="subtle"></span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr><th>Rank</th><th>Symbol</th><th>Optimizer Weight</th><th>Signal Sharpe</th></tr>
+                    </thead>
+                    <tbody id="signalPortfolioBookBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel curve-panel reveal">
+              <div class="panel-header">
+                <h2 id="signalPortfolioCurveTitle">Signal-Optimized Equity Curve</h2>
+                <span class="subtle">net of per-stock costs, nightly re-optimized</span>
+              </div>
+              <div class="curve-window">
+                <div id="signalPortfolioChart" class="echart" role="img" aria-label="Signal-optimized equity curve"></div>
               </div>
             </section>
           </section>
