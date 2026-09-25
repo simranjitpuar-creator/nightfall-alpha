@@ -5,7 +5,12 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
 *.egg-info/
+build/
 data/processed/
 data/reports/
 data/universe/metadata.csv

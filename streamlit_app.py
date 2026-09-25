@@ -18,8 +18,12 @@ from nightfall_alpha.backtest.metrics import compute_drawdown
 from nightfall_alpha.backtest.walkforward import WalkForwardConfig, run_walk_forward
 from nightfall_alpha.config import Settings, load_settings
 from nightfall_alpha.dashboard.app import (
+    _enriched_portfolio_summary,
     _filter_trades_frame,
-    _load_payload,
+    _latest_holdings,
+    _load_frame_section,
+    _load_metrics_section,
+    _metrics_context,
     _missing_symbols_from_prices,
     _trade_summary,
 )
@@ -28,6 +32,7 @@ from nightfall_alpha.data.pipeline import (
     artifact_paths,
     download_real_market_data,
     ensure_price_history_for_symbols,
+    ensure_reports,
     load_or_create_prices,
     run_research_pipeline,
 )
@@ -591,11 +596,29 @@ def display_frame(frame: pd.DataFrame, *, height: int = 420, columns: list[str] 
     show = frame.copy()
     if columns:
         show = show[[column for column in columns if column in show.columns]]
-    st.dataframe(show, use_container_width=True, height=height)
+    st.dataframe(show, width="stretch", height=height)
 
 
 def current_payload(cfg: Settings) -> dict[str, Any]:
-    return _load_payload(cfg)
+    paths = ensure_reports(cfg)
+    metrics = _load_metrics_section(paths)
+    context = _metrics_context(cfg, metrics)
+    latest_signal_date, latest_holdings = _latest_holdings(cfg, paths)
+    return {
+        "metrics": metrics,
+        "daily": _load_frame_section(paths, "daily"),
+        "equity": _load_frame_section(paths, "equity"),
+        "trades": _load_frame_section(paths, "trades"),
+        "portfolio_summary": _enriched_portfolio_summary(paths),
+        "portfolio_weights": _load_frame_section(paths, "portfolio_weights"),
+        "latest_signal_date": (
+            latest_signal_date.strftime("%Y-%m-%d")
+            if latest_signal_date is not None and pd.notna(latest_signal_date)
+            else None
+        ),
+        "latest_holdings": latest_holdings,
+        **context,
+    }
 
 
 def project_path(path: Path) -> str:
@@ -679,8 +702,8 @@ def plot_curves(equity: pd.DataFrame) -> None:
     drawdown_fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
 
     left, right = st.columns([1.35, 1.0])
-    left.plotly_chart(equity_fig, use_container_width=True)
-    right.plotly_chart(drawdown_fig, use_container_width=True)
+    left.plotly_chart(equity_fig, width="stretch")
+    right.plotly_chart(drawdown_fig, width="stretch")
 
 
 def market_data_page(cfg: Settings) -> None:
@@ -1404,7 +1427,7 @@ def benchmark_page(cfg: Settings) -> None:
             )
             fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
             fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         st.caption(
             "Benchmark data: Yahoo Finance daily closes (adjusted). UST10Y is an approximate 10-year "
             "Treasury total return derived from the ^TNX yield index with a fixed modified duration of 8."
@@ -1536,7 +1559,7 @@ def walkforward_page(cfg: Settings) -> None:
         )
         fig.update_yaxes(tickprefix="$", gridcolor="rgba(255,255,255,0.08)")
         fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="nf-panel">', unsafe_allow_html=True)

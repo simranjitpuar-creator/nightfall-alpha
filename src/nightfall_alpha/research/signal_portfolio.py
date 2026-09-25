@@ -16,7 +16,7 @@ and every weight change is billed at each stock's own cost rate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -152,14 +152,10 @@ def _method_weights_np(
     raise ValueError(f"Unknown optimizer method: {method}")
 
 
-def run_signal_portfolio_backtest(
-    prices: pd.DataFrame,
-    config: SignalPortfolioConfig | None = None,
-) -> dict[str, Any]:
-    cfg = config or SignalPortfolioConfig()
-    if cfg.method not in OPTIMIZER_METHODS:
-        raise ValueError(f"Unknown optimizer method: {cfg.method}")
-
+def _prepare_context(prices: pd.DataFrame, cfg: SignalPortfolioConfig) -> dict[str, Any]:
+    """Shared, method-independent prep: features, nightly candidate books,
+    the estimation matrix, and per-stock cost rates. Expensive — run once
+    and reuse across optimizer methods."""
     features = build_overnight_features(prices, cfg.lookback_days, cfg.min_history)
     if features.empty:
         raise ValueError("No usable price history for the signal-optimized backtest.")
@@ -205,6 +201,22 @@ def run_signal_portfolio_backtest(
                 chunk[:, 5].astype(int),  # signal ranks
             )
         )
+
+    return {
+        "nightly": nightly,
+        "matrix_values": matrix_values,
+        "column_position": column_position,
+        "date_position": date_position,
+        "cost_rate_by_symbol": cost_rate_by_symbol,
+    }
+
+
+def _run_method(context: dict[str, Any], cfg: SignalPortfolioConfig) -> dict[str, Any]:
+    nightly = context["nightly"]
+    matrix_values = context["matrix_values"]
+    column_position = context["column_position"]
+    date_position = context["date_position"]
+    cost_rate_by_symbol = context["cost_rate_by_symbol"]
 
     equity = float(cfg.initial_capital)
     previous_book: dict[str, tuple[float, float]] = {}  # symbol -> (weight, realized return)
@@ -309,6 +321,7 @@ def run_signal_portfolio_backtest(
     metrics = performance_metrics(daily, cfg.initial_capital)
     metrics["cost_return_total"] = float(daily["cost_return"].sum())
     metrics["average_turnover"] = float(daily["turnover"].mean())
+    metrics["average_positions"] = float(daily["positions"].mean())
     metrics["optimizer_fallback_days"] = int(fallback_days)
     metrics["optimizer_fallback_share"] = float(fallback_days / len(daily)) if len(daily) else 0.0
 
@@ -331,3 +344,34 @@ def run_signal_portfolio_backtest(
             "cash_rate": cfg.cash_rate,
         },
     }
+
+
+def run_signal_portfolio_backtest(
+    prices: pd.DataFrame,
+    config: SignalPortfolioConfig | None = None,
+) -> dict[str, Any]:
+    cfg = config or SignalPortfolioConfig()
+    if cfg.method not in OPTIMIZER_METHODS:
+        raise ValueError(f"Unknown optimizer method: {cfg.method}")
+    context = _prepare_context(prices, cfg)
+    return _run_method(context, cfg)
+
+
+def run_signal_portfolio_suite(
+    prices: pd.DataFrame,
+    config: SignalPortfolioConfig | None = None,
+    methods: list[str] | None = None,
+) -> dict[str, Any]:
+    """Run every optimizer method over the same nightly candidate books.
+
+    The expensive prep (features, candidate selection, estimation matrix) is
+    shared; each method only pays for its own nightly weight loop.
+    """
+    cfg = config or SignalPortfolioConfig()
+    selected = list(methods) if methods else list(OPTIMIZER_METHODS)
+    unknown = [method for method in selected if method not in OPTIMIZER_METHODS]
+    if unknown:
+        raise ValueError(f"Unknown optimizer method(s): {', '.join(unknown)}")
+    context = _prepare_context(prices, cfg)
+    results = {method: _run_method(context, replace(cfg, method=method)) for method in selected}
+    return {"results": results, "methods": selected}

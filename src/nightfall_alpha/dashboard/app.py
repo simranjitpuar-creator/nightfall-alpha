@@ -34,6 +34,7 @@ from nightfall_alpha.research.signal_portfolio import (
     OPTIMIZER_METHODS,
     SignalPortfolioConfig,
     run_signal_portfolio_backtest,
+    run_signal_portfolio_suite,
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -73,7 +74,7 @@ class SignalBacktestRequest(SignalSettingsRequest):
 
 
 class SignalPortfolioRequest(BaseModel):
-    method: str = Field(default="mean_variance", pattern="^(score_weighted|equal_weight|kelly|mean_variance|minimum_variance|inverse_volatility|cvar|black_litterman)$")
+    method: str = Field(default="all", pattern="^(all|score_weighted|equal_weight|kelly|mean_variance|minimum_variance|inverse_volatility|cvar|black_litterman)$")
     lookback_days: int = Field(default=63, ge=2)
     min_history: int = Field(default=40, ge=1)
     top_n: int = Field(default=25, ge=1, le=505)
@@ -506,35 +507,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         reports = artifact_paths(cfg).metrics_path.parent
         return reports / "signal_portfolio.json", reports / "signal_portfolio_daily.csv"
 
-    def _signal_portfolio_response(result: dict[str, Any]) -> dict[str, Any]:
-        daily = result["daily"]
-        curve = daily[["signal_date", "ending_equity", "net_return", "turnover", "cost_return", "positions"]].rename(
-            columns={"signal_date": "date", "ending_equity": "equity"}
-        )
+    def _signal_portfolio_payload(results: dict[str, Any], order: list[str]) -> dict[str, Any]:
+        """Normalized response: per-method metrics/config/book plus compact
+        [date, equity] curves for the chart."""
+        curves: dict[str, list[list[Any]]] = {}
+        for method, result in results.items():
+            daily = result["daily"]
+            curve = daily[["signal_date", "ending_equity"]].copy()
+            curve["signal_date"] = pd.to_datetime(curve["signal_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            curves[method] = curve.values.tolist()
         return {
-            "metrics": result["metrics"],
-            "config": result["config"],
-            "current_book": _records(result["current_book"]),
-            "daily": _records(curve),
+            "methods": order,
+            "method_labels": OPTIMIZER_METHODS,
+            "results": {
+                method: {
+                    "metrics": result["metrics"],
+                    "config": result["config"],
+                    "current_book": _records(result["current_book"]),
+                }
+                for method, result in results.items()
+            },
+            "curves": curves,
         }
 
     @app.get("/api/signal-portfolio")
     def signal_portfolio_saved() -> dict[str, Any]:
         json_path, daily_path = _signal_portfolio_paths()
         if not json_path.exists() or not daily_path.exists():
-            return {"available": False, "methods": OPTIMIZER_METHODS}
+            return {"available": False, "method_labels": OPTIMIZER_METHODS}
         import json as _json
 
         saved = _json.loads(json_path.read_text(encoding="utf-8"))
         daily = load_report_csv(daily_path)
-        curve = daily.rename(columns={"signal_date": "date", "ending_equity": "equity"}) if not daily.empty else daily
+        curves: dict[str, list[list[Any]]] = {}
+        if not daily.empty and "method" in daily.columns:
+            daily["signal_date"] = pd.to_datetime(daily["signal_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            for method, frame in daily.groupby("method"):
+                curves[str(method)] = frame[["signal_date", "ending_equity"]].values.tolist()
         return {
             "available": True,
-            "methods": OPTIMIZER_METHODS,
-            "metrics": saved.get("metrics", {}),
-            "config": saved.get("config", {}),
-            "current_book": saved.get("current_book", []),
-            "daily": _records(curve),
+            "methods": saved.get("methods", []),
+            "method_labels": OPTIMIZER_METHODS,
+            "results": saved.get("results", {}),
+            "curves": curves,
         }
 
     @app.post("/api/signal-portfolio/run")
@@ -548,43 +563,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 prices = prices[pd.to_datetime(prices["date"]) >= pd.Timestamp(request.price_start)]
             if request.price_end:
                 prices = prices[pd.to_datetime(prices["date"]) <= pd.Timestamp(request.price_end)]
-            result = run_signal_portfolio_backtest(
-                prices,
-                SignalPortfolioConfig(
-                    lookback_days=request.lookback_days,
-                    min_history=request.min_history,
-                    top_n=request.top_n,
-                    min_signal=request.min_signal,
-                    method=request.method,
-                    estimation_days=request.estimation_days,
-                    max_weight=request.max_weight,
-                    initial_capital=request.initial_capital,
-                    fees_bps=request.fees_bps,
-                    slippage_bps=request.slippage_bps,
-                    cash_rate=request.cash_rate,
-                    optimizer_iterations=request.optimizer_iterations,
-                ),
+            config = SignalPortfolioConfig(
+                lookback_days=request.lookback_days,
+                min_history=request.min_history,
+                top_n=request.top_n,
+                min_signal=request.min_signal,
+                method="mean_variance" if request.method == "all" else request.method,
+                estimation_days=request.estimation_days,
+                max_weight=request.max_weight,
+                initial_capital=request.initial_capital,
+                fees_bps=request.fees_bps,
+                slippage_bps=request.slippage_bps,
+                cash_rate=request.cash_rate,
+                optimizer_iterations=request.optimizer_iterations,
             )
+            if request.method == "all":
+                suite = run_signal_portfolio_suite(prices, config)
+                results, order = suite["results"], suite["methods"]
+            else:
+                results = {request.method: run_signal_portfolio_backtest(prices, config)}
+                order = [request.method]
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         import json as _json
 
         json_path, daily_path = _signal_portfolio_paths()
-        result["daily"].to_csv(daily_path, index=False)
+        frames = []
+        for method, result in results.items():
+            frame = result["daily"].copy()
+            frame["method"] = method
+            frames.append(frame)
+        pd.concat(frames, ignore_index=True).to_csv(daily_path, index=False)
         json_path.write_text(
             _json.dumps(
                 {
-                    "metrics": result["metrics"],
-                    "config": result["config"],
-                    "current_book": _records(result["current_book"]),
+                    "methods": order,
+                    "results": {
+                        method: {
+                            "metrics": result["metrics"],
+                            "config": result["config"],
+                            "current_book": _records(result["current_book"]),
+                        }
+                        for method, result in results.items()
+                    },
                 },
                 indent=2,
                 default=str,
             ),
             encoding="utf-8",
         )
-        return {"status": "ok", **_signal_portfolio_response(result)}
+        return {"status": "ok", **_signal_portfolio_payload(results, order)}
 
     @app.post("/api/run")
     def rerun(request: SignalBacktestRequest = Body(default_factory=SignalBacktestRequest)) -> dict[str, Any]:

@@ -16,7 +16,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package
-        run: pip install -e .
+        run: pip install -e ".[streamlit]"
 
       - name: Ruff
         run: pip install ruff && ruff check src tests streamlit_app.py

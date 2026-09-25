@@ -2956,55 +2956,69 @@ function signalPortfolioPayload() {
 }
 
 function renderSignalPortfolio(data) {
-  const metrics = data.metrics || {};
-  const config = data.config || {};
-  const daily = data.daily || [];
+  const results = data.results || {};
+  const order = data.methods || Object.keys(results);
+  const labels = data.method_labels || {};
+  const curves = data.curves || {};
 
+  let bestMethod = null;
+  let bestSharpe = -Infinity;
+  order.forEach((method) => {
+    const sharpe = Number(results[method]?.metrics?.sharpe);
+    if (Number.isFinite(sharpe) && sharpe > bestSharpe) {
+      bestSharpe = sharpe;
+      bestMethod = method;
+    }
+  });
+
+  const firstConfig = results[order[0]]?.config || {};
   const meta = document.getElementById("signalPortfolioMeta");
-  if (meta && config.method_label) {
-    meta.textContent = `${config.method_label} | top ${config.top_n} nightly | ${config.estimation_days}D estimation | cap ${formatPct(config.max_weight)} | ${config.fees_bps}+${config.slippage_bps} bps/side`;
+  if (meta && firstConfig.top_n) {
+    meta.textContent = `${order.length} optimizer${order.length === 1 ? "" : "s"} | top ${firstConfig.top_n} nightly | ${firstConfig.estimation_days}D estimation | cap ${formatPct(firstConfig.max_weight)} | ${firstConfig.fees_bps}+${firstConfig.slippage_bps} bps/side${bestMethod ? ` | Best Sharpe: ${labels[bestMethod] || bestMethod}` : ""}`;
   }
 
   const body = document.getElementById("signalPortfolioMetricsBody");
   body.innerHTML = "";
-  if (data.metrics && metrics.observations) {
-    const avgPositions = daily.length
-      ? daily.reduce((sum, row) => sum + (Number(row.positions) || 0), 0) / daily.length
-      : null;
+  order.forEach((method) => {
+    const result = results[method];
+    if (!result?.metrics) return;
+    const metrics = result.metrics;
+    const isBest = method === bestMethod && order.length > 1;
+    const badge = isBest ? ` <span class="inline-badge">Best Sharpe</span>` : "";
     const cells = [
-      [config.method_label || config.method, "text"],
-      [metrics.start_date, "date"],
-      [metrics.end_date, "date"],
-      [metrics.elapsed_years, "years"],
-      [metrics.observations, "integer"],
-      [metrics.final_equity, "money"],
-      [metrics.total_return, "pct"],
-      [metrics.cagr, "pct"],
-      [metrics.annualized_volatility, "pct"],
-      [metrics.sharpe, "number"],
-      [metrics.sortino, "number"],
-      [metrics.calmar, "number"],
-      [metrics.max_drawdown, "pct"],
-      [metrics.win_rate, "pct"],
-      [metrics.cost_return_total, "pct"],
-      [metrics.average_turnover, "pct"],
-      [avgPositions, "number"],
-      [metrics.optimizer_fallback_days, "integer"],
+      `${labels[method] || result.config?.method_label || method}${badge}`,
+      formatByType(metrics.start_date, "date"),
+      formatByType(metrics.end_date, "date"),
+      formatByType(metrics.elapsed_years, "years"),
+      formatByType(metrics.observations, "integer"),
+      formatByType(metrics.final_equity, "money"),
+      formatByType(metrics.total_return, "pct"),
+      formatByType(metrics.cagr, "pct"),
+      formatByType(metrics.annualized_volatility, "pct"),
+      formatByType(metrics.sharpe, "number"),
+      formatByType(metrics.sortino, "number"),
+      formatByType(metrics.calmar, "number"),
+      formatByType(metrics.max_drawdown, "pct"),
+      formatByType(metrics.win_rate, "pct"),
+      formatByType(metrics.cost_return_total, "pct"),
+      formatByType(metrics.average_turnover, "pct"),
+      formatByType(metrics.average_positions, "number"),
+      formatByType(metrics.optimizer_fallback_days, "integer"),
     ];
     const row = document.createElement("tr");
-    row.innerHTML = cells
-      .map(([value, type]) => (type === "text" ? `<td>${value || "-"}</td>` : `<td>${formatByType(value, type)}</td>`))
-      .join("");
+    if (isBest) row.className = "selected-row";
+    row.innerHTML = cells.map((value) => `<td>${value}</td>`).join("");
     body.appendChild(row);
-  }
+  });
 
+  const bookMethod = bestMethod || order[0];
+  const book = results[bookMethod]?.current_book || [];
   const bookBody = document.getElementById("signalPortfolioBookBody");
   bookBody.innerHTML = "";
-  const book = data.current_book || [];
   const bookMeta = document.getElementById("signalPortfolioBookMeta");
   if (bookMeta) {
     bookMeta.textContent = book.length
-      ? `${book.length} names sized by ${config.method_label || "the optimizer"} for the latest signal date`
+      ? `${book.length} names sized by ${labels[bookMethod] || bookMethod} for the latest signal date`
       : "run the suite to see tonight's optimized book";
   }
   book.forEach((entry) => {
@@ -3017,9 +3031,24 @@ function renderSignalPortfolio(data) {
     bookBody.appendChild(row);
   });
 
-  renderInteractiveChart("signalPortfolioChart", daily, ["equity"], {
+  // Overlay every method's equity curve on one chart; methods share the
+  // same nightly dates, so index by date from the first curve.
+  const curveMethods = order.filter((method) => (curves[method] || []).length);
+  const dateOrder = curveMethods.length ? curves[curveMethods[0]].map((point) => point[0]) : [];
+  const equityByMethod = {};
+  curveMethods.forEach((method) => {
+    equityByMethod[method] = new Map(curves[method].map((point) => [point[0], point[1]]));
+  });
+  const chartRows = dateOrder.map((date) => {
+    const row = { date };
+    curveMethods.forEach((method) => {
+      row[labels[method] || method] = equityByMethod[method].get(date) ?? null;
+    });
+    return row;
+  });
+  renderInteractiveChart("signalPortfolioChart", chartRows, curveMethods.map((method) => labels[method] || method), {
     yFormatter: (value) => formatMoney(value),
-    emptyText: "Run the signal-optimized backtest to load the curve",
+    emptyText: "Run the signal-optimized backtest to load the curves",
   });
 }
 

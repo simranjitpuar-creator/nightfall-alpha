@@ -10,6 +10,7 @@ from nightfall_alpha.research.signal_portfolio import (
     OPTIMIZER_METHODS,
     SignalPortfolioConfig,
     run_signal_portfolio_backtest,
+    run_signal_portfolio_suite,
 )
 
 
@@ -103,6 +104,30 @@ class SignalPortfolioEngineTests(unittest.TestCase):
         # estimation needs 20 overlapping rows: early nights fall back.
         self.assertGreater(result["metrics"]["optimizer_fallback_days"], 0)
         self.assertLess(result["metrics"]["optimizer_fallback_share"], 1.0)
+
+
+class SignalPortfolioSuiteTests(unittest.TestCase):
+    def test_suite_runs_every_method_over_identical_books(self) -> None:
+        prices = _prices(symbols=20, start="2024-01-01", end="2024-09-30")
+        suite = run_signal_portfolio_suite(
+            prices, SignalPortfolioConfig(top_n=8, max_weight=0.07), methods=["equal_weight", "kelly", "minimum_variance"]
+        )
+        self.assertEqual(suite["methods"], ["equal_weight", "kelly", "minimum_variance"])
+        self.assertEqual(set(suite["results"]), set(suite["methods"]))
+        dailies = [result["daily"] for result in suite["results"].values()]
+        # Same candidate books: identical signal nights across methods; only
+        # sizing (and therefore returns/costs) may differ.
+        for other in dailies[1:]:
+            self.assertTrue(dailies[0]["signal_date"].equals(other["signal_date"]))
+        # Methods must not silently collapse into identical return paths.
+        gross = [frame["gross_return"].to_numpy() for frame in dailies]
+        self.assertGreater(float(np.abs(gross[0] - gross[1]).sum()), 1e-6)
+        finals = {method: result["metrics"]["final_equity"] for method, result in suite["results"].items()}
+        self.assertGreater(max(finals.values()) - min(finals.values()), 1.0)
+
+    def test_suite_rejects_unknown_method(self) -> None:
+        with self.assertRaises(ValueError):
+            run_signal_portfolio_suite(_prices(), SignalPortfolioConfig(), methods=["equal_weight", "bogus"])
 
 
 if __name__ == "__main__":
