@@ -4,7 +4,11 @@ import asyncio
 import os
 import secrets
 import threading
+import time
+from collections import defaultdict, deque
+from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import pandas as pd
@@ -23,11 +27,13 @@ from nightfall_alpha.data.pipeline import (
     download_real_market_data,
     ensure_price_history_for_symbols,
     ensure_reports,
+    filter_price_history,
     load_metrics,
     load_or_create_prices,
     load_report_csv,
     price_cache_path,
     run_research_pipeline,
+    save_price_cache,
 )
 from nightfall_alpha.data.universe_metadata import load_universe_metadata
 from nightfall_alpha.portfolio.builder import PortfolioBuildSpec, build_custom_portfolio, parse_symbols
@@ -42,12 +48,53 @@ from nightfall_alpha.research.signal_portfolio import (
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+PUBLIC_SIMULATION_PATHS = frozenset(
+    {
+        "/api/run",
+        "/api/portfolio/build",
+        "/api/walkforward",
+        "/api/signal-portfolio/run",
+    }
+)
+
+
+class GuestRateLimiter:
+    """Small in-memory burst + daily limiter for a single Cloud Run instance."""
+
+    def __init__(
+        self,
+        burst_limit: int = 10,
+        burst_window_seconds: int = 600,
+        daily_limit: int = 100,
+    ) -> None:
+        self.burst_limit = max(1, burst_limit)
+        self.burst_window_seconds = max(1, burst_window_seconds)
+        self.daily_limit = max(self.burst_limit, daily_limit)
+        self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, now: float | None = None) -> tuple[bool, int]:
+        current = time.time() if now is None else now
+        day_cutoff = current - 86_400
+        burst_cutoff = current - self.burst_window_seconds
+        with self._lock:
+            events = self._events[key]
+            while events and events[0] <= day_cutoff:
+                events.popleft()
+            burst_events = [event for event in events if event > burst_cutoff]
+            if len(events) >= self.daily_limit:
+                return False, max(1, int(events[0] + 86_400 - current))
+            if len(burst_events) >= self.burst_limit:
+                return False, max(1, int(burst_events[0] + self.burst_window_seconds - current))
+            events.append(current)
+            return True, 0
+
 
 def _request_requires_write_token(method: str, path: str, query: dict[str, str] | None = None) -> bool:
     if not path.startswith("/api/") or path == "/api/health":
         return False
     if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
-        return True
+        return path not in PUBLIC_SIMULATION_PATHS
     values = query or {}
     return (path == "/api/universe" and values.get("refresh_market_caps", "").lower() == "true") or (
         path == "/api/benchmarks" and values.get("refresh", "").lower() == "true"
@@ -411,6 +458,13 @@ def _metrics_context(settings: Settings, metrics: dict[str, Any]) -> dict[str, A
     }
 
 
+def _positive_env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
     app = FastAPI(title="NightFall Alpha", version="0.1.0")
@@ -418,27 +472,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     price_cache: dict[str, object] = {"mtime": None, "frame": None}
     api_lock = asyncio.Lock()
     write_token = os.environ.get("NIGHTFALL_ALPHA_WRITE_TOKEN", "").strip()
+    guest_max_symbols = _positive_env_int("NIGHTFALL_ALPHA_GUEST_MAX_SYMBOLS", 25)
+    guest_max_trading_days = _positive_env_int("NIGHTFALL_ALPHA_GUEST_MAX_TRADING_DAYS", 1_260)
+    guest_rate_limiter = GuestRateLimiter(
+        burst_limit=_positive_env_int("NIGHTFALL_ALPHA_GUEST_BURST_LIMIT", 10),
+        burst_window_seconds=_positive_env_int("NIGHTFALL_ALPHA_GUEST_BURST_WINDOW_SECONDS", 600),
+        daily_limit=_positive_env_int("NIGHTFALL_ALPHA_GUEST_DAILY_LIMIT", 100),
+    )
 
     @app.middleware("http")
     async def protect_and_serialize_api_requests(request: Request, call_next: Any) -> Response:
         is_api_request = request.url.path.startswith("/api/") and request.url.path != "/api/health"
+        supplied = request.headers.get("X-Nightfall-Write-Token", "")
+        is_admin = not write_token or bool(supplied and secrets.compare_digest(supplied, write_token))
+        request.state.is_admin = is_admin
         requires_token = _request_requires_write_token(
             request.method,
             request.url.path,
             dict(request.query_params),
         )
-        if write_token and requires_token:
-            supplied = request.headers.get("X-Nightfall-Write-Token", "")
-            if not supplied or not secrets.compare_digest(supplied, write_token):
+        if requires_token and not is_admin:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "A valid dashboard write token is required for saved-data and administrative changes."},
+                headers={"X-Nightfall-Write-Auth": "required"},
+            )
+        is_guest_simulation = (
+            request.method.upper() == "POST"
+            and request.url.path in PUBLIC_SIMULATION_PATHS
+            and not is_admin
+        )
+        if is_guest_simulation:
+            forwarded = request.headers.get("X-Forwarded-For", "").split(",", maxsplit=1)[0].strip()
+            client_host = request.client.host if request.client else "unknown"
+            allowed, retry_after = guest_rate_limiter.allow(forwarded or client_host)
+            if not allowed:
                 return JSONResponse(
-                    status_code=401,
-                    content={"detail": "A valid dashboard write token is required for simulations and data changes."},
-                    headers={"X-Nightfall-Write-Auth": "required"},
+                    status_code=429,
+                    content={"detail": "Guest simulation limit reached. Try again later or use the admin token."},
+                    headers={"Retry-After": str(retry_after)},
                 )
         if is_api_request:
             async with api_lock:
-                return await call_next(request)
-        return await call_next(request)
+                response = await call_next(request)
+        else:
+            response = await call_next(request)
+        if is_guest_simulation:
+            response.headers["X-Nightfall-Mode"] = "guest"
+        return response
 
     def cached_prices() -> pd.DataFrame:
         path = price_cache_path(cfg)
@@ -455,6 +536,89 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = price_cache_path(cfg)
         price_cache["frame"] = prices
         price_cache["mtime"] = path.stat().st_mtime_ns if path.exists() else None
+
+    def is_guest_request(http_request: Request) -> bool:
+        return not bool(getattr(http_request.state, "is_admin", True))
+
+    def bounded_guest_prices(
+        symbols: str | list[str] | tuple[str, ...] | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        max_trading_days: int | None = None,
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        prices = cached_prices().copy()
+        requested = list(parse_symbols(symbols)) if symbols else []
+        if len(requested) > guest_max_symbols:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Guest simulations support at most {guest_max_symbols} symbols per run.",
+            )
+        available = sorted(prices["symbol"].dropna().astype(str).unique().tolist())
+        selected = requested or available[:guest_max_symbols]
+        try:
+            prices = filter_price_history(prices, start=start, end=end, symbols=selected)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        dates = pd.DatetimeIndex(pd.to_datetime(prices["date"], errors="coerce").dropna().unique()).sort_values()
+        trading_day_limit = min(guest_max_trading_days, max_trading_days or guest_max_trading_days)
+        window_limited = len(dates) > trading_day_limit
+        if window_limited:
+            prices = prices[pd.to_datetime(prices["date"]) >= dates[-trading_day_limit]].copy()
+        limits = {
+            "max_symbols": guest_max_symbols,
+            "max_trading_days": trading_day_limit,
+            "selected_symbols": selected,
+            "symbol_count": int(prices["symbol"].nunique()),
+            "trading_days": int(prices["date"].nunique()),
+            "window_limited": window_limited,
+        }
+        return prices, limits
+
+    def guest_dashboard_snapshot(result: dict[str, Any]) -> dict[str, Any]:
+        metrics = result["metrics"]
+        context = _metrics_context(cfg, metrics)
+        signals = result["signals"].copy()
+        latest_signal_date = None
+        latest_holdings = pd.DataFrame()
+        if not signals.empty:
+            signals["signal_date"] = pd.to_datetime(signals["signal_date"], errors="coerce")
+            latest_signal_date = signals["signal_date"].max()
+            latest_holdings = signals[signals["signal_date"] == latest_signal_date].sort_values(
+                "weight", ascending=False
+            )
+            try:
+                metadata = load_universe_metadata(cfg, refresh_market_caps=False)[
+                    ["symbol", "name", "sector", "sector_code", "market_cap"]
+                ]
+                latest_holdings = latest_holdings.merge(metadata, on="symbol", how="left")
+            except Exception:
+                latest_holdings = latest_holdings.copy()
+        candidate_limit = max(1, min(int(context["strategy"].get("top_n", 25)), guest_max_symbols))
+        trades = result["backtest"].trades.copy()
+        returned_trades = trades.tail(10_000)
+        overview = {
+            "metrics": metrics,
+            "latest_signal_date": (
+                latest_signal_date.strftime("%Y-%m-%d")
+                if latest_signal_date is not None and pd.notna(latest_signal_date)
+                else None
+            ),
+            "latest_holdings": _records(latest_holdings.head(candidate_limit)),
+            "portfolio_summary": _records(result["portfolio_summary"]),
+            "strategy": context["strategy"],
+            "backtest": context["backtest"],
+            "data_window": context["data_window"],
+            "survivorship": context["survivorship"],
+        }
+        return {
+            "guest": True,
+            "overview": overview,
+            "equity": {"rows": _records(result["backtest"].equity_curve)},
+            "trades": {
+                "rows": _records(returned_trades),
+                "summary": _trade_summary(trades, trades, returned_trades),
+            },
+        }
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -594,16 +758,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/api/signal-portfolio/run")
-    def signal_portfolio_run(request: SignalPortfolioRequest) -> dict[str, Any]:
+    def signal_portfolio_run(http_request: Request, request: SignalPortfolioRequest) -> dict[str, Any]:
+        guest = is_guest_request(http_request)
+        guest_limits: dict[str, Any] | None = None
         try:
-            prices = cached_prices()
-            if request.price_symbols:
-                wanted = set(parse_symbols(request.price_symbols))
-                prices = prices[prices["symbol"].astype(str).isin(wanted)]
-            if request.price_start:
-                prices = prices[pd.to_datetime(prices["date"]) >= pd.Timestamp(request.price_start)]
-            if request.price_end:
-                prices = prices[pd.to_datetime(prices["date"]) <= pd.Timestamp(request.price_end)]
+            if guest:
+                prices, guest_limits = bounded_guest_prices(
+                    request.price_symbols,
+                    request.price_start,
+                    request.price_end,
+                    max_trading_days=504,
+                )
+            else:
+                prices = cached_prices()
+                if request.price_symbols:
+                    wanted = set(parse_symbols(request.price_symbols))
+                    prices = prices[prices["symbol"].astype(str).isin(wanted)]
+                if request.price_start:
+                    prices = prices[pd.to_datetime(prices["date"]) >= pd.Timestamp(request.price_start)]
+                if request.price_end:
+                    prices = prices[pd.to_datetime(prices["date"]) <= pd.Timestamp(request.price_end)]
             config = SignalPortfolioConfig(
                 lookback_days=request.lookback_days,
                 min_history=request.min_history,
@@ -616,7 +790,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 fees_bps=request.fees_bps,
                 slippage_bps=request.slippage_bps,
                 cash_rate=request.cash_rate,
-                optimizer_iterations=request.optimizer_iterations,
+                optimizer_iterations=min(request.optimizer_iterations, 100) if guest else request.optimizer_iterations,
             )
             if request.method == "all":
                 suite = run_signal_portfolio_suite(prices, config)
@@ -627,69 +801,122 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        import json as _json
+        if not guest:
+            import json as _json
 
-        json_path, daily_path = _signal_portfolio_paths()
-        frames = []
-        for method, result in results.items():
-            frame = result["daily"].copy()
-            frame["method"] = method
-            frames.append(frame)
-        pd.concat(frames, ignore_index=True).to_csv(daily_path, index=False)
-        json_path.write_text(
-            _json.dumps(
-                {
-                    "methods": order,
-                    "results": {
-                        method: {
-                            "metrics": result["metrics"],
-                            "config": result["config"],
-                            "current_book": _records(result["current_book"]),
-                        }
-                        for method, result in results.items()
+            json_path, daily_path = _signal_portfolio_paths()
+            frames = []
+            for method, result in results.items():
+                frame = result["daily"].copy()
+                frame["method"] = method
+                frames.append(frame)
+            pd.concat(frames, ignore_index=True).to_csv(daily_path, index=False)
+            json_path.write_text(
+                _json.dumps(
+                    {
+                        "methods": order,
+                        "results": {
+                            method: {
+                                "metrics": result["metrics"],
+                                "config": result["config"],
+                                "current_book": _records(result["current_book"]),
+                            }
+                            for method, result in results.items()
+                        },
                     },
-                },
-                indent=2,
-                default=str,
-            ),
-            encoding="utf-8",
-        )
-        return {"status": "ok", **_signal_portfolio_payload(results, order)}
-
-    @app.post("/api/run")
-    def rerun(request: SignalBacktestRequest = Body(default_factory=SignalBacktestRequest)) -> dict[str, Any]:
-        price_symbols = list(parse_symbols(request.price_symbols)) if request.price_symbols else None
-        result = run_research_pipeline(
-            cfg,
-            force_sample_prices=request.force_sample_prices,
-            strategy_overrides=request.model_dump(
-                exclude={
-                    "force_sample_prices",
-                    "price_start",
-                    "price_end",
-                    "price_symbols",
-                    "initial_capital",
-                    "fees_bps",
-                    "slippage_bps",
-                    "cost_model",
-                    "capital_capacity",
-                    "cash_rate",
-                    "max_adv_participation",
-                }
-            ),
-            initial_capital=request.initial_capital,
-            fees_bps=request.fees_bps,
-            slippage_bps=request.slippage_bps,
-            cost_model=request.cost_model,
-            capital_capacity=request.capital_capacity,
-            cash_rate=request.cash_rate,
-            max_adv_participation=request.max_adv_participation,
-            price_start=request.price_start,
-            price_end=request.price_end,
-            price_symbols=price_symbols,
-        )
+                    indent=2,
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
         return {
             "status": "ok",
+            "mode": "guest" if guest else "admin",
+            "persisted": not guest,
+            "guest_limits": guest_limits,
+            **_signal_portfolio_payload(results, order),
+        }
+
+    @app.post("/api/run")
+    def rerun(
+        http_request: Request,
+        request: SignalBacktestRequest = Body(default_factory=SignalBacktestRequest),
+    ) -> dict[str, Any]:
+        price_symbols = list(parse_symbols(request.price_symbols)) if request.price_symbols else None
+        guest = is_guest_request(http_request)
+        guest_limits: dict[str, Any] | None = None
+        pipeline_settings = cfg
+        force_sample_prices = request.force_sample_prices
+        price_start = request.price_start
+        price_end = request.price_end
+        pipeline_symbols = price_symbols
+        temporary_directory: TemporaryDirectory[str] | None = None
+        if guest:
+            guest_prices, guest_limits = bounded_guest_prices(
+                request.price_symbols,
+                request.price_start,
+                request.price_end,
+            )
+            temporary_directory = TemporaryDirectory(prefix="nightfall-alpha-guest-")
+            temporary_root = Path(temporary_directory.name)
+            pipeline_settings = replace(cfg, project=replace(cfg.project, data_dir=temporary_root))
+            save_price_cache(pipeline_settings, guest_prices)
+            force_sample_prices = False
+            price_start = None
+            price_end = None
+            pipeline_symbols = None
+        try:
+            result = run_research_pipeline(
+                pipeline_settings,
+                force_sample_prices=force_sample_prices,
+                strategy_overrides=request.model_dump(
+                    exclude={
+                        "force_sample_prices",
+                        "price_start",
+                        "price_end",
+                        "price_symbols",
+                        "initial_capital",
+                        "fees_bps",
+                        "slippage_bps",
+                        "cost_model",
+                        "capital_capacity",
+                        "cash_rate",
+                        "max_adv_participation",
+                    }
+                ),
+                initial_capital=request.initial_capital,
+                fees_bps=request.fees_bps,
+                slippage_bps=request.slippage_bps,
+                cost_model=request.cost_model,
+                capital_capacity=request.capital_capacity,
+                cash_rate=request.cash_rate,
+                max_adv_participation=request.max_adv_participation,
+                price_start=price_start,
+                price_end=price_end,
+                price_symbols=pipeline_symbols,
+                apply_index_membership=not guest,
+            )
+            if guest:
+                result["data_window"].update(
+                    {
+                        "requested_start": request.price_start,
+                        "requested_end": request.price_end,
+                        "requested_symbol_count": len(price_symbols or []),
+                        "requested_symbols": list(price_symbols or [])[:guest_max_symbols],
+                    }
+                )
+                dashboard = guest_dashboard_snapshot(result)
+            else:
+                dashboard = None
+        finally:
+            if temporary_directory is not None:
+                temporary_directory.cleanup()
+        return {
+            "status": "ok",
+            "mode": "guest" if guest else "admin",
+            "persisted": not guest,
+            "guest_limits": guest_limits,
+            "dashboard": dashboard,
             "signals": len(result["signals"]),
             "trades": len(result["backtest"].trades),
             "final_equity": result["metrics"].get("final_equity"),
@@ -756,29 +983,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/portfolio/build")
-    def build_portfolio(request: PortfolioBuilderRequest) -> dict[str, Any]:
+    def build_portfolio(http_request: Request, request: PortfolioBuilderRequest) -> dict[str, Any]:
+        guest = is_guest_request(http_request)
+        guest_limits: dict[str, Any] | None = None
         try:
-            base_prices = cached_prices()
-            if request.use_entire_universe:
-                symbols = tuple(sorted(base_prices["symbol"].dropna().astype(str).unique().tolist()))
+            if guest:
+                requested_symbols = None if request.use_entire_universe else request.symbols
+                prices, guest_limits = bounded_guest_prices(requested_symbols)
+                available_symbols = tuple(sorted(prices["symbol"].dropna().astype(str).unique().tolist()))
+                original_symbols = parse_symbols(request.symbols) if request.symbols else available_symbols
+                missing = [symbol for symbol in original_symbols if symbol not in set(available_symbols)]
+                symbols = available_symbols
+                downloaded: list[str] = []
             else:
-                symbols = parse_symbols(request.symbols)
-            missing = _missing_symbols_from_prices(base_prices, symbols)
-            downloaded: list[str] = []
-            refresh_history = _should_refresh_portfolio_history(request)
-            needs_missing_fill = request.auto_download_missing and bool(missing)
-            if symbols and (needs_missing_fill or refresh_history):
-                prices, missing, downloaded = ensure_price_history_for_symbols(
-                    cfg,
-                    symbols,
-                    start=request.data_start,
-                    source=request.data_source,
-                    refresh_existing=refresh_history,
-                    incremental=request.incremental,
-                )
-                remember_prices(prices)
-            else:
-                prices = base_prices
+                base_prices = cached_prices()
+                if request.use_entire_universe:
+                    symbols = tuple(sorted(base_prices["symbol"].dropna().astype(str).unique().tolist()))
+                else:
+                    symbols = parse_symbols(request.symbols)
+                missing = _missing_symbols_from_prices(base_prices, symbols)
+                downloaded = []
+                refresh_history = _should_refresh_portfolio_history(request)
+                needs_missing_fill = request.auto_download_missing and bool(missing)
+                if symbols and (needs_missing_fill or refresh_history):
+                    prices, missing, downloaded = ensure_price_history_for_symbols(
+                        cfg,
+                        symbols,
+                        start=request.data_start,
+                        source=request.data_source,
+                        refresh_existing=refresh_history,
+                        incremental=request.incremental,
+                    )
+                    remember_prices(prices)
+                else:
+                    prices = base_prices
             result = build_custom_portfolio(
                 prices,
                 PortfolioBuildSpec(
@@ -813,6 +1051,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             effective_lookback = _effective_portfolio_lookback(request)
             return {
                 "status": "ok",
+                "mode": "guest" if guest else "admin",
+                "guest_limits": guest_limits,
                 "selected_portfolio": result["selected_portfolio"],
                 "return_model": result["return_model"],
                 "rebalance_frequency": result.get("rebalance_frequency", request.rebalance_frequency),
@@ -900,9 +1140,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/walkforward")
-    def walkforward_endpoint(request: WalkForwardRequest) -> dict[str, Any]:
+    def walkforward_endpoint(http_request: Request, request: WalkForwardRequest) -> dict[str, Any]:
+        guest = is_guest_request(http_request)
+        guest_limits: dict[str, Any] | None = None
         try:
-            prices = cached_prices()
+            if guest:
+                prices, guest_limits = bounded_guest_prices(start=request.start_date)
+                max_folds = min(request.max_folds or 8, 8)
+            else:
+                prices = cached_prices()
+                max_folds = request.max_folds
             result = run_walk_forward(
                 prices,
                 WalkForwardConfig(
@@ -910,7 +1157,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     test_days=request.test_days,
                     step_days=request.step_days,
                     start_date=request.start_date,
-                    max_folds=request.max_folds,
+                    max_folds=max_folds,
                     selection_metric=request.selection_metric,
                     base_max_weight=request.max_weight,
                 ),
@@ -923,10 +1170,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 risk_free_rate=cfg.portfolio.risk_free_rate,
                 initial_capital=cfg.backtest.initial_capital,
             )
-            paths = artifact_paths(cfg)
-            result.folds.to_csv(paths.walkforward_folds_path, index=False)
-            if not result.oos_daily.empty:
-                result.oos_daily.to_csv(paths.walkforward_daily_path, index=False)
+            if not guest:
+                paths = artifact_paths(cfg)
+                result.folds.to_csv(paths.walkforward_folds_path, index=False)
+                if not result.oos_daily.empty:
+                    result.oos_daily.to_csv(paths.walkforward_daily_path, index=False)
             oos_curve: list[dict[str, Any]] = []
             if not result.oos_daily.empty:
                 curve = result.oos_daily[["exit_date", "ending_equity"]].rename(
@@ -935,6 +1183,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 oos_curve = _records(curve)
             return {
                 "status": "ok",
+                "mode": "guest" if guest else "admin",
+                "persisted": not guest,
+                "guest_limits": guest_limits,
                 "folds": _records(result.folds),
                 "oos_metrics": result.oos_metrics,
                 "oos_curve": oos_curve,
@@ -945,6 +1196,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "step_days": request.step_days,
                     "selection_metric": request.selection_metric,
                     "cost_model": request.cost_model,
+                    "max_folds": max_folds,
                 },
             }
         except Exception as exc:

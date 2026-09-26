@@ -11,7 +11,9 @@ param(
 
     [string]$BucketName = '',
 
-    [string]$RepositoryName = 'nightfall-alpha'
+    [string]$RepositoryName = 'nightfall-alpha',
+
+    [switch]$ReuseExistingWriteToken
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,28 +84,37 @@ if (-not (Test-GcloudResource -Arguments @('iam', 'service-accounts', 'describe'
 
 Invoke-Gcloud @('storage', 'buckets', 'add-iam-policy-binding', "gs://$BucketName", "--member=serviceAccount:$ServiceAccount", '--role=roles/storage.objectUser', "--project=$ProjectId")
 
-if (-not (Test-GcloudResource -Arguments @('secrets', 'describe', $SecretName, "--project=$ProjectId"))) {
+$secretExists = Test-GcloudResource -Arguments @('secrets', 'describe', $SecretName, "--project=$ProjectId")
+if (-not $secretExists -and $ReuseExistingWriteToken) {
+    throw "Cannot reuse $SecretName because the secret does not exist in project $ProjectId."
+}
+if (-not $secretExists) {
     Invoke-Gcloud @('secrets', 'create', $SecretName, '--replication-policy=automatic', "--project=$ProjectId")
 }
 
-$secureToken = Read-Host 'Choose the private write token you will enter before running simulations' -AsSecureString
-$tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
-$temporaryTokenFile = Join-Path ([IO.Path]::GetTempPath()) ("nightfall-alpha-token-{0}.txt" -f [guid]::NewGuid())
-try {
-    $plainToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
-    if ([string]::IsNullOrWhiteSpace($plainToken) -or $plainToken.Length -lt 16) {
-        throw 'The write token must contain at least 16 characters.'
-    }
-    [IO.File]::WriteAllText($temporaryTokenFile, $plainToken, [Text.UTF8Encoding]::new($false))
-    Invoke-Gcloud @('secrets', 'versions', 'add', $SecretName, "--data-file=$temporaryTokenFile", "--project=$ProjectId")
+if ($ReuseExistingWriteToken) {
+    Write-Host "Reusing the existing Secret Manager token $SecretName."
 }
-finally {
-    if ($tokenPointer -ne [IntPtr]::Zero) {
-        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
+else {
+    $secureToken = Read-Host 'Choose the private admin token for saved-data and administrative changes' -AsSecureString
+    $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
+    $temporaryTokenFile = Join-Path ([IO.Path]::GetTempPath()) ("nightfall-alpha-token-{0}.txt" -f [guid]::NewGuid())
+    try {
+        $plainToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
+        if ([string]::IsNullOrWhiteSpace($plainToken) -or $plainToken.Length -lt 16) {
+            throw 'The write token must contain at least 16 characters.'
+        }
+        [IO.File]::WriteAllText($temporaryTokenFile, $plainToken, [Text.UTF8Encoding]::new($false))
+        Invoke-Gcloud @('secrets', 'versions', 'add', $SecretName, "--data-file=$temporaryTokenFile", "--project=$ProjectId")
     }
-    $plainToken = $null
-    if (Test-Path -LiteralPath $temporaryTokenFile) {
-        Remove-Item -LiteralPath $temporaryTokenFile -Force
+    finally {
+        if ($tokenPointer -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
+        }
+        $plainToken = $null
+        if (Test-Path -LiteralPath $temporaryTokenFile) {
+            Remove-Item -LiteralPath $temporaryTokenFile -Force
+        }
     }
 }
 
@@ -129,7 +140,7 @@ $deployArguments = @(
     '--concurrency=1',
     '--timeout=900',
     '--execution-environment=gen2',
-    '--set-env-vars=NIGHTFALL_ALPHA_ENV=production,NIGHTFALL_ALPHA_DATA_DIR=/var/lib/nightfall-alpha',
+    '--set-env-vars=NIGHTFALL_ALPHA_ENV=production,NIGHTFALL_ALPHA_DATA_DIR=/var/lib/nightfall-alpha,NIGHTFALL_ALPHA_GUEST_MAX_SYMBOLS=25,NIGHTFALL_ALPHA_GUEST_MAX_TRADING_DAYS=1260,NIGHTFALL_ALPHA_GUEST_BURST_LIMIT=10,NIGHTFALL_ALPHA_GUEST_BURST_WINDOW_SECONDS=600,NIGHTFALL_ALPHA_GUEST_DAILY_LIMIT=100',
     "--set-secrets=NIGHTFALL_ALPHA_WRITE_TOKEN=${SecretName}:latest",
     '--add-volume', $volume,
     '--quiet'
@@ -147,4 +158,5 @@ if ($health.StatusCode -ne 200) {
 }
 
 Write-Host "NightFall Alpha is live: $serviceUrl"
-Write-Host 'The write token is required only for simulations, downloads, and other saved-data changes.'
+Write-Host 'Public visitors can run bounded temporary simulations without a token.'
+Write-Host 'The admin token is required only for persistent data, downloads, refreshes, and administrative changes.'

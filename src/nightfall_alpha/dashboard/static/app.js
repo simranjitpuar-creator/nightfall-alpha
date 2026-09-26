@@ -7,6 +7,9 @@ const state = {
   builder: null,
   universe: [],
   eraStudyLoaded: false,
+  guestRunActive: false,
+  guestTrades: [],
+  guestTradeSourceSummary: null,
   curves: {
     range: "full",
     hoverIndex: null,
@@ -250,7 +253,7 @@ function requestWithWriteToken(options = {}) {
 async function fetchJson(url, options = {}) {
   let response = await fetch(url, requestWithWriteToken(options));
   if (response.status === 401 && response.headers.get("X-Nightfall-Write-Auth") === "required") {
-    const token = window.prompt("Enter the NightFall Alpha write token to run simulations or change saved data:");
+    const token = window.prompt("Enter the NightFall Alpha admin token to change saved data or refresh provider data:");
     if (token) {
       window.sessionStorage.setItem(WRITE_TOKEN_STORAGE_KEY, token.trim());
       response = await fetch(url, requestWithWriteToken(options));
@@ -1538,6 +1541,65 @@ function syncTradeDateDefaults(summary) {
   }
 }
 
+function guestTradeDate(row) {
+  return row.exit_date || row.signal_date || row.date || "";
+}
+
+function guestTradeSelection() {
+  const filters = tradeFilterValues();
+  const filtered = state.guestTrades.filter((row) => {
+    const symbol = String(row.symbol || "").toUpperCase();
+    const date = guestTradeDate(row);
+    const pnl = Number(row.net_pnl);
+    if (filters.symbol && !symbol.includes(filters.symbol)) return false;
+    if (filters.start && date && date < filters.start) return false;
+    if (filters.end && date && date > filters.end) return false;
+    if (filters.pnl === "wins" && !(pnl > 0)) return false;
+    if (filters.pnl === "losses" && !(pnl < 0)) return false;
+    return true;
+  });
+  return {
+    filtered,
+    returned: filtered.slice(-Math.max(1, filters.limit)),
+  };
+}
+
+function guestTradeSummary(filtered, returned) {
+  const source = state.guestTradeSourceSummary || {};
+  const dates = filtered.map(guestTradeDate).filter(Boolean).sort();
+  const exits = filtered.map((row) => row.exit_date).filter(Boolean).sort();
+  const latestExit = exits.at(-1) || null;
+  const numeric = (key) => filtered.map((row) => Number(row[key])).filter(Number.isFinite);
+  const netPnl = numeric("net_pnl");
+  const grossPnl = numeric("gross_pnl");
+  const costs = numeric("cost");
+  const notionals = numeric("notional");
+  const weights = numeric("weight");
+  const sum = (values) => values.reduce((total, value) => total + value, 0);
+  return {
+    ...source,
+    filtered_trades: filtered.length,
+    returned_trades: returned.length,
+    shown_trades: returned.length,
+    filtered_symbols: new Set(filtered.map((row) => row.symbol).filter(Boolean)).size,
+    symbols: new Set(filtered.map((row) => row.symbol).filter(Boolean)).size,
+    filtered_start_date: dates[0] || null,
+    filtered_end_date: dates.at(-1) || null,
+    latest_entry_date: filtered.map((row) => row.signal_date).filter(Boolean).sort().at(-1) || null,
+    latest_exit_date: latestExit,
+    latest_trade_count: latestExit ? filtered.filter((row) => row.exit_date === latestExit).length : 0,
+    total_net_pnl: sum(netPnl),
+    total_gross_pnl: sum(grossPnl),
+    total_cost: sum(costs),
+    total_notional: sum(notionals),
+    average_weight: weights.length ? sum(weights) / weights.length : null,
+    win_rate: netPnl.length ? netPnl.filter((value) => value > 0).length / netPnl.length : null,
+    average_trade_pnl: netPnl.length ? sum(netPnl) / netPnl.length : null,
+    best_trade_pnl: netPnl.length ? Math.max(...netPnl) : null,
+    worst_trade_pnl: netPnl.length ? Math.min(...netPnl) : null,
+  };
+}
+
 function renderTrades(rows = state.trades) {
   const body = document.getElementById("tradesBody");
   body.innerHTML = "";
@@ -1969,17 +2031,27 @@ function handleCurvePointerLeave() {
   renderCurves();
 }
 
-async function loadDashboard() {
-  const [overview, equity, trades] = await Promise.all([
-    fetchJson("/api/overview"),
-    fetchJson("/api/equity"),
-    fetchJson(`/api/trades?${tradeQueryParams(true).toString()}`),
-  ]);
+async function loadDashboard(snapshot = null) {
+  let overview;
+  let equity;
+  let trades;
+  if (snapshot) {
+    ({ overview, equity, trades } = snapshot);
+  } else {
+    [overview, equity, trades] = await Promise.all([
+      fetchJson("/api/overview"),
+      fetchJson("/api/equity"),
+      fetchJson(`/api/trades?${tradeQueryParams(true).toString()}`),
+    ]);
+  }
 
   state.overview = overview;
   state.equity = equity.rows || [];
   state.trades = trades.rows || [];
   state.tradeSummary = trades.summary || null;
+  state.guestRunActive = Boolean(snapshot?.guest);
+  state.guestTrades = state.guestRunActive ? [...state.trades] : [];
+  state.guestTradeSourceSummary = state.guestRunActive ? state.tradeSummary : null;
   syncTradeDateDefaults(state.tradeSummary);
   const strategy = overview.strategy || {};
   const backtest = overview.backtest || {};
@@ -1999,7 +2071,9 @@ async function loadDashboard() {
   syncSignalWindowFromOverview(overview.data_window);
 
   const generatedAt = overview.metrics?.generated_at;
-  const savedRunText = generatedAt ? ` | saved run ${generatedAt}` : "";
+  const savedRunText = state.guestRunActive
+    ? ` | temporary guest run${generatedAt ? ` ${generatedAt}` : ""}`
+    : (generatedAt ? ` | saved run ${generatedAt}` : "");
   document.getElementById("asOf").textContent = overview.latest_signal_date
     ? `Current book date ${overview.latest_signal_date} | ${strategy.lookback_days || 63}D signal lookback${savedRunText}`
     : `No current book${savedRunText}`;
@@ -2034,6 +2108,13 @@ async function loadDashboard() {
 }
 
 async function loadTradesFromFilters() {
+  if (state.guestRunActive) {
+    const { filtered, returned } = guestTradeSelection();
+    state.trades = returned;
+    state.tradeSummary = guestTradeSummary(filtered, returned);
+    renderTrades();
+    return;
+  }
   const result = await fetchJson(`/api/trades?${tradeQueryParams(true).toString()}`);
   state.trades = result.rows || [];
   state.tradeSummary = result.summary || null;
@@ -2088,10 +2169,11 @@ async function rerun(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(backtestPayload()),
     });
-    await loadDashboard();
-    status.textContent = `${result.trades.toLocaleString()} trades`;
-    finishTaskProgress("taskProgress", "Backtest complete");
-    toast("Signal backtest complete");
+    await loadDashboard(result.dashboard || null);
+    const guest = result.mode === "guest";
+    status.textContent = `${result.trades.toLocaleString()} trades${guest ? " | temporary guest run" : " | saved"}`;
+    finishTaskProgress("taskProgress", guest ? "Temporary guest backtest complete" : "Backtest complete");
+    toast(guest ? "Guest backtest complete — results are not saved" : "Signal backtest complete and saved");
   } catch (error) {
     status.textContent = "Failed";
     finishTaskProgress("taskProgress", "Backtest failed", true);
@@ -2196,9 +2278,10 @@ async function buildPortfolio(event) {
     }
     state.builder = result;
     renderBuilder(result);
-    status.textContent = `Suite built | Best Sharpe: ${result.selected_portfolio}`;
-    finishTaskProgress("taskProgress", "Portfolio built");
-    toast("Portfolio built");
+    const guest = result.mode === "guest";
+    status.textContent = `Suite built | Best Sharpe: ${result.selected_portfolio}${guest ? " | temporary guest run" : ""}`;
+    finishTaskProgress("taskProgress", guest ? "Temporary guest portfolio built" : "Portfolio built");
+    toast(guest ? "Guest portfolio built — no shared data changed" : "Portfolio built");
   } catch (error) {
     status.textContent = "Failed";
     finishTaskProgress("taskProgress", "Builder failed", true);
@@ -2314,6 +2397,17 @@ function downloadBuilderWeightsCsv() {
 }
 
 function downloadTradesCsv() {
+  if (state.guestRunActive) {
+    const { filtered } = guestTradeSelection();
+    if (!filtered.length) {
+      toast("No guest trades match the active filters");
+      return;
+    }
+    const columns = Object.keys(filtered[0]).map((key) => ({ label: key, value: key }));
+    downloadTextFile("nightfall_alpha_guest_trade_blotter.csv", rowsToCsv(filtered, columns));
+    toast("Temporary guest trade CSV downloaded");
+    return;
+  }
   const query = tradeQueryParams(false);
   const suffix = query.toString();
   openDownloadUrl(`/api/trades.csv${suffix ? `?${suffix}` : ""}`);
@@ -2631,9 +2725,10 @@ async function runWalkforward(event) {
       yFormatter: (value) => formatCompactMoney(value) || formatMoney(value),
       emptyText: "Run walk-forward to load the out-of-sample curve",
     });
-    status.textContent = `${(result.folds || []).length} folds`;
-    finishTaskProgress("taskProgress", "Walk-forward complete");
-    toast("Walk-forward complete");
+    const guest = result.mode === "guest";
+    status.textContent = `${(result.folds || []).length} folds${guest ? " | temporary guest run" : " | saved"}`;
+    finishTaskProgress("taskProgress", guest ? "Temporary guest walk-forward complete" : "Walk-forward complete");
+    toast(guest ? "Guest walk-forward complete — results are not saved" : "Walk-forward complete and saved");
   } catch (error) {
     status.textContent = "Failed";
     finishTaskProgress("taskProgress", "Walk-forward failed", true);
@@ -3088,8 +3183,13 @@ async function runSignalPortfolio(event) {
       body: JSON.stringify(signalPortfolioPayload()),
     });
     renderSignalPortfolio(result);
-    status.textContent = "Complete";
-    finishTaskProgress("taskProgress", "Signal-optimized backtest complete");
+    const guest = result.mode === "guest";
+    status.textContent = guest ? "Complete | temporary guest run" : "Complete | saved";
+    finishTaskProgress(
+      "taskProgress",
+      guest ? "Temporary guest signal-optimized backtest complete" : "Signal-optimized backtest complete",
+    );
+    toast(guest ? "Guest optimizer run complete — results are not saved" : "Signal-optimized result saved");
   } catch (error) {
     status.textContent = "Failed";
     toast(error.message || "Signal-optimized backtest failed");

@@ -57,7 +57,8 @@ Cloud Run hosts the primary FastAPI application and the complete NightFall Alpha
 - a Python 3.12 container with a small precomputed baseline so the first dashboard load is ready;
 - one request-billed Cloud Run instance at most, with one concurrent request and a 15-minute timeout;
 - a Cloud Storage volume mounted at `NIGHTFALL_ALPHA_DATA_DIR`, preserving downloaded prices and generated reports across restarts and revisions;
-- a Secret Manager write token that protects simulations, downloads, refreshes, and other saved-data changes while leaving the dashboard readable; and
+- public, bounded simulations that run against cached data without changing the shared saved dashboard;
+- a Secret Manager admin token that protects persistent simulations, downloads, refreshes, and other saved-data changes; and
 - the platform-provided HTTPS `run.app` URL, so a custom domain is optional.
 
 Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), authenticate it, and select a billing-enabled project. Then run:
@@ -67,7 +68,15 @@ gcloud auth login
 .\scripts\deploy_cloud_run.ps1 -ProjectId "your-google-cloud-project-id"
 ```
 
-The script prompts securely for a private write token of at least 16 characters. The token is stored in Secret Manager rather than the repository. The browser asks for it only when someone tries to run a simulation or change saved data, and retains it only for that browser tab's session.
+The script prompts securely for a private admin token of at least 16 characters. The token is stored in Secret Manager rather than the repository. Visitors can run Signal Backtest, Portfolio Builder, Walk-Forward, and Signal-Optimized simulations without it; those guest results are temporary and never replace shared reports or cached prices. The browser asks for the admin token only for downloads, provider refreshes, saved simulations, and other administrative changes, and retains it only for that browser tab's session.
+
+Guest work is capped by default at 25 symbols and 1,260 trading days, with 10 simulation requests per 10 minutes and 100 per day for each client IP. Signal-optimized guest runs use at most 504 trading days and 100 optimizer iterations; guest walk-forward runs use at most eight folds. These limits are configurable with the `NIGHTFALL_ALPHA_GUEST_*` environment variables shown in `.env.example`.
+
+For later code-only redeployments, keep the existing Secret Manager value instead of rotating it:
+
+```powershell
+.\scripts\deploy_cloud_run.ps1 -ProjectId "your-google-cloud-project-id" -ReuseExistingWriteToken
+```
 
 The default deployment uses `us-central1`, 1 vCPU, 2 GiB RAM, zero minimum instances, one maximum instance, and request-based billing. These settings limit accidental scale-out and allow the service to scale to zero, but Google Cloud free-tier limits are usage allowances rather than a hard guarantee of a zero-dollar bill. Configure a billing budget and alerts in the Google Cloud console before sharing the URL broadly.
 
