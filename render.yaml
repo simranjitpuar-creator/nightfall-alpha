@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: nightfall-alpha
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -e . && nightfall-alpha backtest
+    startCommand: nightfall-alpha dashboard --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: NIGHTFALL_ALPHA_ENV
+        value: production

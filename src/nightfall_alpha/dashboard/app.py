@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import secrets
 import threading
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, Response
+from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -38,6 +41,17 @@ from nightfall_alpha.research.signal_portfolio import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def _request_requires_write_token(method: str, path: str, query: dict[str, str] | None = None) -> bool:
+    if not path.startswith("/api/") or path == "/api/health":
+        return False
+    if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        return True
+    values = query or {}
+    return (path == "/api/universe" and values.get("refresh_market_caps", "").lower() == "true") or (
+        path == "/api/benchmarks" and values.get("refresh", "").lower() == "true"
+    )
 
 
 class SignalSettingsRequest(BaseModel):
@@ -402,6 +416,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="NightFall Alpha", version="0.1.0")
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     price_cache: dict[str, object] = {"mtime": None, "frame": None}
+    api_lock = asyncio.Lock()
+    write_token = os.environ.get("NIGHTFALL_ALPHA_WRITE_TOKEN", "").strip()
+
+    @app.middleware("http")
+    async def protect_and_serialize_api_requests(request: Request, call_next: Any) -> Response:
+        is_api_request = request.url.path.startswith("/api/") and request.url.path != "/api/health"
+        requires_token = _request_requires_write_token(
+            request.method,
+            request.url.path,
+            dict(request.query_params),
+        )
+        if write_token and requires_token:
+            supplied = request.headers.get("X-Nightfall-Write-Token", "")
+            if not supplied or not secrets.compare_digest(supplied, write_token):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "A valid dashboard write token is required for simulations and data changes."},
+                    headers={"X-Nightfall-Write-Auth": "required"},
+                )
+        if is_api_request:
+            async with api_lock:
+                return await call_next(request)
+        return await call_next(request)
 
     def cached_prices() -> pd.DataFrame:
         path = price_cache_path(cfg)
@@ -418,6 +455,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = price_cache_path(cfg)
         price_cache["frame"] = prices
         price_cache["mtime"] = path.stat().st_mtime_ns if path.exists() else None
+
+    @app.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> HTMLResponse:

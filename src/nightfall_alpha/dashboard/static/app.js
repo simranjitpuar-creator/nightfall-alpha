@@ -233,8 +233,30 @@ function signedClass(value) {
   return number > 0 ? "gain" : "loss";
 }
 
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
+const WRITE_TOKEN_STORAGE_KEY = "nightfall_alpha_write_token";
+
+function requestWithWriteToken(options = {}) {
+  const token = window.sessionStorage.getItem(WRITE_TOKEN_STORAGE_KEY);
+  if (!token) return options;
+  return {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      "X-Nightfall-Write-Token": token,
+    },
+  };
+}
+
+async function fetchJson(url, options = {}) {
+  let response = await fetch(url, requestWithWriteToken(options));
+  if (response.status === 401 && response.headers.get("X-Nightfall-Write-Auth") === "required") {
+    const token = window.prompt("Enter the NightFall Alpha write token to run simulations or change saved data:");
+    if (token) {
+      window.sessionStorage.setItem(WRITE_TOKEN_STORAGE_KEY, token.trim());
+      response = await fetch(url, requestWithWriteToken(options));
+      if (response.status === 401) window.sessionStorage.removeItem(WRITE_TOKEN_STORAGE_KEY);
+    }
+  }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
     try {

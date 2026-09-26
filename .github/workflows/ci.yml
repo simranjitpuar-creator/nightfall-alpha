@@ -19,7 +19,44 @@ jobs:
         run: pip install -e ".[streamlit]"
 
       - name: Ruff
-        run: pip install ruff && ruff check src tests streamlit_app.py
+        run: pip install ruff && ruff check src tests scripts/cloud_run_start.py streamlit_app.py
 
       - name: Unit tests
         run: python -m unittest discover -s tests
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Cloud Run image
+        run: docker build --tag nightfall-alpha:ci .
+
+      - name: Start Cloud Run image
+        run: >-
+          docker run --detach --name nightfall-alpha-ci --publish 8080:8080
+          --env NIGHTFALL_ALPHA_WRITE_TOKEN=ci-write-token-not-a-secret
+          nightfall-alpha:ci
+
+      - name: Smoke-test dashboard and write protection
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/api/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8080/ | grep --quiet "NightFall Alpha"
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST --header 'Content-Type: application/json' \
+            --data '{}' http://127.0.0.1:8080/api/run)
+          test "$status" = "401"
+
+      - name: Show container logs
+        if: always()
+        run: docker logs nightfall-alpha-ci
+
+      - name: Stop container
+        if: always()
+        run: docker rm --force nightfall-alpha-ci

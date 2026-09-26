@@ -110,17 +110,37 @@ def load_settings(path: str | Path | None = None) -> Settings:
     def env_value(name: str) -> str | None:
         return _env(f"{ENV_PREFIX}{name}") or dotenv.get(f"{ENV_PREFIX}{name}")
 
+    data_dir_override = env_value("DATA_DIR")
     project_settings = ProjectSettings(
         name=str(project.get("name", ProjectSettings.name)),
-        data_dir=_path(env_value("DATA_DIR") or project.get("data_dir", DATA_DIR)),
+        data_dir=_path(data_dir_override or project.get("data_dir", DATA_DIR)),
         seed=int(project.get("seed", ProjectSettings.seed)),
     )
+
+    # A hosted deployment can move the writable data root without needing a
+    # second settings file. When DATA_DIR is overridden, keep the two universe
+    # files under that same persistent root unless their own explicit
+    # environment overrides are provided.
+    sample_file_override = env_value("UNIVERSE_SAMPLE_FILE")
+    live_file_override = env_value("UNIVERSE_LIVE_FILE")
+    if sample_file_override:
+        sample_file = _path(sample_file_override)
+    elif data_dir_override:
+        sample_file = project_settings.data_dir / "universe" / "sp500_sample.csv"
+    else:
+        sample_file = _path(universe.get("sample_file", project_settings.data_dir / "universe" / "sp500_sample.csv"))
+    if live_file_override:
+        live_file = _path(live_file_override)
+    elif data_dir_override:
+        live_file = project_settings.data_dir / "universe" / "sp500_constituents.csv"
+    else:
+        live_file = _path(universe.get("live_file", project_settings.data_dir / "universe" / "sp500_constituents.csv"))
 
     return Settings(
         project=project_settings,
         universe=UniverseSettings(
-            sample_file=_path(universe.get("sample_file", project_settings.data_dir / "universe" / "sp500_sample.csv")),
-            live_file=_path(universe.get("live_file", project_settings.data_dir / "universe" / "sp500_constituents.csv")),
+            sample_file=sample_file,
+            live_file=live_file,
         ),
         backtest=BacktestSettings(
             initial_capital=float(env_value("INITIAL_CAPITAL") or backtest.get("initial_capital", BacktestSettings.initial_capital)),

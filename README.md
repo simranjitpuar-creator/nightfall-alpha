@@ -50,23 +50,49 @@ NightFall Alpha no longer downloads market data automatically on launch. Use the
 
 Every signal backtest run is saved to `data/reports/`. When the dashboard opens it automatically loads the most recent saved run — the status bar shows `saved run YYYY-MM-DD HH:MM:SS` so you can tell you are looking at a previous run rather than a fresh one, and the Signal Backtest controls are prefilled with that run's settings (date window, tickers, top-N, cost model, capacity limits). Report sections are cached in memory keyed on file mtimes, so repeat page loads are near-instant and any new run invalidates the cache automatically.
 
-## Streamlit deployment
+## Production deployment (Google Cloud Run)
 
-The repo includes a Streamlit Cloud entrypoint at:
+Cloud Run hosts the primary FastAPI application and the complete NightFall Alpha HTML/CSS/JavaScript interface together. It does not use the alternate Streamlit UI. The included deployment creates:
 
-```text
-streamlit_app.py
+- a Python 3.12 container with a small precomputed baseline so the first dashboard load is ready;
+- one request-billed Cloud Run instance at most, with one concurrent request and a 15-minute timeout;
+- a Cloud Storage volume mounted at `NIGHTFALL_ALPHA_DATA_DIR`, preserving downloaded prices and generated reports across restarts and revisions;
+- a Secret Manager write token that protects simulations, downloads, refreshes, and other saved-data changes while leaving the dashboard readable; and
+- the platform-provided HTTPS `run.app` URL, so a custom domain is optional.
+
+Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), authenticate it, and select a billing-enabled project. Then run:
+
+```powershell
+gcloud auth login
+.\scripts\deploy_cloud_run.ps1 -ProjectId "your-google-cloud-project-id"
 ```
 
-Deploy it from Streamlit Community Cloud with:
+The script prompts securely for a private write token of at least 16 characters. The token is stored in Secret Manager rather than the repository. The browser asks for it only when someone tries to run a simulation or change saved data, and retains it only for that browser tab's session.
+
+The default deployment uses `us-central1`, 1 vCPU, 2 GiB RAM, zero minimum instances, one maximum instance, and request-based billing. These settings limit accidental scale-out and allow the service to scale to zero, but Google Cloud free-tier limits are usage allowances rather than a hard guarantee of a zero-dollar bill. Configure a billing budget and alerts in the Google Cloud console before sharing the URL broadly.
+
+Cloud Storage is mounted through Cloud Run's second-generation execution environment. Existing files are never replaced by the packaged baseline during startup, so market data and reports from an earlier revision remain authoritative.
+
+## Alternate production deployment (Render)
+
+The primary dashboard is the FastAPI application with the complete NightFall Alpha HTML/CSS/JavaScript interface. The root `render.yaml` deploys that application as a Render web service:
 
 ```text
 Repository: simranjitpuar-creator/nightfall-alpha
 Branch: main
-Main file path: streamlit_app.py
+Blueprint: render.yaml
+Health check: /api/health
 ```
 
-The Streamlit version uses the same NightFall Alpha Python research engine and recreates the local dashboard's tabs, dark fintech theme, metrics, portfolio builder, benchmark comparison, walk-forward evaluation, charts, trade blotter, CSV downloads, and framework notes. Streamlit Cloud will not include ignored local caches such as `data/processed/prices.parquet` or `data/reports/*`; use the Market Data page in the deployed app to refresh real Yahoo or Stooq data into that runtime.
+The build generates the default synthetic research artifacts once, before the service starts. Visitors therefore receive the dashboard shell immediately instead of waiting for report generation during the first page load. Render then starts the existing `nightfall-alpha dashboard` command on the platform-provided port.
+
+The Blueprint uses Render's free plan. Free services spin down after inactivity, so the first request after an idle period can still have a platform cold-start delay. A continuously running Render plan removes that delay without changing the application.
+
+Generated prices and reports live on the service filesystem. They are regenerated on each deploy; use the Market Data page after deployment to replace the synthetic baseline with current Yahoo, Stooq, or Tiingo data. Add a Render persistent disk before relying on downloaded data across deploys.
+
+## Alternate Streamlit interface
+
+The repository also retains `streamlit_app.py` as an alternate, simplified Streamlit-native interface. It is not the same frontend as the primary FastAPI dashboard and does not preserve the primary dashboard's navigation or interactions exactly.
 
 To run the Streamlit version locally:
 

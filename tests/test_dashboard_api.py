@@ -17,11 +17,18 @@ from nightfall_alpha.dashboard.app import (
     _effective_portfolio_lookback,
     _missing_symbols_from_prices,
     _should_refresh_portfolio_history,
+    create_app,
 )
 from nightfall_alpha.data.pipeline import run_research_pipeline
 
 
 class DashboardPipelineTests(unittest.TestCase):
+    def test_health_endpoint_is_lightweight_and_ready_for_host_checks(self) -> None:
+        app = create_app()
+        health_route = next(route for route in app.routes if getattr(route, "path", None) == "/api/health")
+
+        self.assertEqual(health_route.endpoint(), {"status": "ok"})
+
     def test_portfolio_builder_lookback_is_separate_from_refresh_window(self) -> None:
         cached_request = PortfolioBuilderRequest(
             symbols="AAPL,MSFT",
