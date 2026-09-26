@@ -11,6 +11,15 @@ from nightfall_alpha.dashboard.app import _request_requires_write_token
 
 
 class CloudRunDeploymentTests(unittest.TestCase):
+    def test_windows_deploy_script_avoids_native_stderr_merging(self) -> None:
+        script = (
+            Path(__file__).resolve().parents[1] / "scripts" / "deploy_cloud_run.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Get-Command gcloud.cmd", script)
+        self.assertIn("function Test-GcloudResource", script)
+        self.assertNotIn("*> $null", script)
+
     def test_data_dir_override_keeps_universe_files_on_persistent_volume(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
