@@ -38,7 +38,7 @@ jobs:
           --env NIGHTFALL_ALPHA_WRITE_TOKEN=ci-write-token-not-a-secret
           nightfall-alpha:ci
 
-      - name: Smoke-test dashboard and write protection
+      - name: Smoke-test dashboard, guest runs, and write protection
         shell: bash
         run: |
           for attempt in {1..30}; do
@@ -49,10 +49,16 @@ jobs:
           done
           root_html=$(curl --fail --silent http://127.0.0.1:8080/)
           grep --quiet "NightFall Alpha" <<<"$root_html"
-          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+          guest_response=$(curl --fail --silent \
             --request POST --header 'Content-Type: application/json' \
-            --data '{}' http://127.0.0.1:8080/api/run)
-          test "$status" = "401"
+            --data '{"price_symbols":"AAPL,MSFT","price_start":"2023-01-01","price_end":"2024-06-30","lookback_days":20,"min_history":10,"top_n":2}' \
+            http://127.0.0.1:8080/api/run)
+          grep --quiet '"mode":"guest"' <<<"$guest_response"
+          grep --quiet '"persisted":false' <<<"$guest_response"
+          protected_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST --header 'Content-Type: application/json' \
+            --data '{}' http://127.0.0.1:8080/api/data/download)
+          test "$protected_status" = "401"
 
       - name: Show container logs
         if: always()

@@ -78,6 +78,17 @@ class CloudRunDeploymentTests(unittest.TestCase):
         self.assertIn("[switch]$ReuseExistingWriteToken", script)
         self.assertNotIn("*> $null", script)
 
+    def test_container_smoke_test_covers_guest_and_admin_boundaries(self) -> None:
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("guest_response=$(curl --fail --silent", workflow)
+        self.assertIn("'\"mode\":\"guest\"'", workflow)
+        self.assertIn("'\"persisted\":false'", workflow)
+        self.assertIn("http://127.0.0.1:8080/api/data/download", workflow)
+        self.assertIn('test "$protected_status" = "401"', workflow)
+
     def test_data_dir_override_keeps_universe_files_on_persistent_volume(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
